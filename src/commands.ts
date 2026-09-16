@@ -261,7 +261,8 @@ export interface CompleteProjectResult {
 
 /**
  * Mark all open/doing tasks in a project as done (all-or-nothing).
- * Co-completed tasks count as clearing blockers for the batch check.
+ * Each task uses the same done / blocked_by check as updateTask —
+ * co-membership in the batch does NOT clear blockers.
  */
 export async function completeProject(
   root: string,
@@ -280,16 +281,15 @@ export async function completeProject(
       return { project: slug, task_ids: [] };
     }
 
-    const batchIds = new Set(targets.map((t) => t.id));
     const failures: string[] = [];
     for (const t of targets) {
-      const open = openBlockersOf(t, all, batchIds);
+      const open = openBlockersOf(t, all);
       if (open.length) {
-        failures.push(`${t.id} 仍被 ${open.join('、')} 阻塞`);
+        failures.push(`${t.id}：${formatBlockedDoneError(open)}`);
       }
     }
     if (failures.length) {
-      throw new Error(`无法完成 project：${failures.join('；')}`);
+      throw new Error(`无法完成 project（全有或全无）：${failures.join('；')}`);
     }
 
     const now = new Date().toISOString();

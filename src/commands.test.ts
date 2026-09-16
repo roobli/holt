@@ -96,7 +96,33 @@ test('blocked_by rejects unknown and self', async () => {
   );
 });
 
-test('complete-project all-or-nothing + history summary', async () => {
+test('complete-project refuses open blockers (same as update done)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'holt-proj-block-'));
+  const a = await pushTask(root, {
+    title: 'A',
+    lane: 'work',
+    project: 'holt-mvp',
+    actor: 'test',
+  });
+  await pushTask(root, {
+    title: 'B',
+    lane: 'work',
+    project: 'holt-mvp',
+    blocked_by: [a.id],
+    actor: 'test',
+  });
+
+  await assert.rejects(
+    () => completeProject(root, 'holt-mvp', 'test'),
+    /无法完成 project/,
+  );
+
+  const tasks = await listTasks(root);
+  assert.equal(tasks.find((t) => t.id === a.id)!.status, 'open');
+  assert.equal(tasks.find((t) => t.title === 'B')!.status, 'open');
+});
+
+test('complete-project all-or-nothing + history when unblocked', async () => {
   const root = await mkdtemp(join(tmpdir(), 'holt-proj-'));
   const a = await pushTask(root, {
     title: 'A',
@@ -108,7 +134,6 @@ test('complete-project all-or-nothing + history summary', async () => {
     title: 'B',
     lane: 'work',
     project: 'holt-mvp',
-    blocked_by: [a.id],
     actor: 'test',
   });
   await pushTask(root, {
@@ -118,7 +143,6 @@ test('complete-project all-or-nothing + history summary', async () => {
     actor: 'test',
   });
 
-  // External open blocker would fail; intra-batch blocker counts as cleared
   const result = await completeProject(root, 'holt-mvp', 'test');
   assert.deepEqual(result.task_ids.sort(), [a.id, b.id].sort());
 
