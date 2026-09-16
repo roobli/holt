@@ -8,6 +8,7 @@ import {
   pushTask as apiPush,
   reorderToIndex,
   setLedger,
+  subscribeLedgerWatch,
   updateTask,
 } from './api';
 import type { HoltEvent, HoltStatus, HoltTaskMeta, LaneFilter, LaneId } from './types';
@@ -20,6 +21,9 @@ interface UiState {
   selectedId: string | null;
   lane: LaneFilter;
   ledgerRoot: string;
+  ledgerExists: boolean;
+  ledgerReady: boolean;
+  watching: boolean;
   error: string | null;
   pushWhere: 'top' | 'bottom' | null;
   busy: boolean;
@@ -32,6 +36,9 @@ const state: UiState = {
   selectedId: null,
   lane: 'all',
   ledgerRoot: '',
+  ledgerExists: false,
+  ledgerReady: false,
+  watching: false,
   error: null,
   pushWhere: null,
   busy: false,
@@ -112,12 +119,20 @@ async function refresh(opts?: { keepSelection?: boolean }): Promise<void> {
   state.busy = true;
   state.error = null;
   try {
-    const [{ tasks }, ledger] = await Promise.all([fetchTasks(), getLedger()]);
-    state.tasks = tasks;
+    const ledger = await getLedger();
     state.ledgerRoot = ledger.root;
-    if (!opts?.keepSelection) {
-      /* keep */
+    state.ledgerExists = ledger.exists;
+    state.ledgerReady = ledger.ready;
+    state.watching = Boolean(ledger.watching);
+    if (!ledger.ready) {
+      state.tasks = [];
+      state.error = ledger.exists
+        ? `不是 ledger（缺少 tasks/）：${ledger.root} — 可点「创建」初始化`
+        : `路径不存在：${ledger.root} — 可点「创建」新建空 ledger`;
+      return;
     }
+    const { tasks } = await fetchTasks();
+    state.tasks = tasks;
     if (state.selectedId && !tasks.some((t) => t.id === state.selectedId)) {
       state.selectedId = tasks[0]?.id ?? null;
     }
@@ -328,9 +343,25 @@ function render(): void {
         ${state.error ? `<div class="error-banner">${escapeHtml(state.error)}</div>` : ''}
         <div class="ledger-bar">
           <span>ledger</span>
-          <input type="text" data-ledger-input value="${escapeHtml(state.ledgerRoot)}" />
+          <input type="text" data-ledger-input value="${escapeHtml(state.ledgerRoot)}" spellcheck="false" />
           <button type="button" data-ledger-apply>打开</button>
+          ${
+            state.ledgerReady
+              ? ''
+              : '<button type="button" data-ledger-create title="创建 tasks/ + history.ndjson">创建</button>'
+          }
           <button type="button" data-refresh>刷新</button>
+          <span class="ledger-status" data-ledger-status title="fs.watch → auto refresh">
+            ${
+              state.ledgerReady
+                ? state.watching
+                  ? '● live'
+                  : '○ ready'
+                : state.ledgerExists
+                  ? '△ no tasks/'
+                  : '✗ missing'
+            }
+          </span>
         </div>
         <button type="button" class="push-btn" data-push="top" ${state.busy ? 'disabled' : ''}>+ 压入栈顶</button>
         ${renderPushDialog()}
@@ -479,18 +510,29 @@ app.addEventListener('click', (e) => {
     return;
   }
 
-  if (t.closest('[data-ledger-apply]')) {
+  if (t.closest('[data-ledger-apply]') || t.closest('[data-ledger-create]')) {
+    const create = Boolean(t.closest('[data-ledger-create]'));
     const input = app.querySelector<HTMLInputElement>('[data-ledger-input]');
     const path = input?.value.trim();
     if (!path) return;
     void (async () => {
       try {
-        await setLedger(path);
+        const info = await setLedger(path, create);
         state.selectedId = null;
+        state.ledgerRoot = info.root;
+        state.ledgerExists = info.exists;
+        state.ledgerReady = info.ready;
         await refresh();
-        showToast(`ledger → ${state.ledgerRoot}`);
+        showToast(
+          create || info.created
+            ? `created ledger → ${state.ledgerRoot}`
+            : `ledger → ${state.ledgerRoot}`,
+        );
       } catch (err) {
-        showToast(err instanceof Error ? err.message : String(err));
+        const msg = err instanceof Error ? err.message : String(err);
+        state.error = msg;
+        showToast(msg);
+        render();
       }
     })();
   }
@@ -575,5 +617,15 @@ app.addEventListener('drop', (e) => {
   })().catch((err) => showToast(err instanceof Error ? err.message : String(err)));
 });
 
+let watchRefreshTimer: number | undefined;
+function onLedgerFileChange(): void {
+  if (state.busy || state.pushWhere) return;
+  window.clearTimeout(watchRefreshTimer);
+  watchRefreshTimer = window.setTimeout(() => {
+    void refresh({ keepSelection: true });
+  }, 80);
+}
+
 render();
 void refresh();
+subscribeLedgerWatch(onLedgerFileChange);

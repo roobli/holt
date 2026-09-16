@@ -41,9 +41,11 @@ Events (v1): `created` | `updated` | `reordered` | `reordered_batch` | `deleted`
 
 ## Write rules
 
-1. Mutate frontmatter → atomic write task file → append history line.
-2. Current UI reads `tasks/*.md`; history is audit / undo fuel.
-3. Do not treat the log as the only source of truth (unlike taska pure replay).
+1. Mutate frontmatter → **atomic** write task file (temp + rename) → append history line.
+2. Concurrent CLI/GUI mutations take a short-lived `.holt.lock` under the ledger root (retry / stale steal); multi-step ops (move, rebalance) hold one lock for the whole sequence.
+3. Current UI reads `tasks/*.md`; history is audit / undo fuel.
+4. Do not treat the log as the only source of truth (unlike taska pure replay).
+5. `ensureLedger` creates `tasks/` and an empty `history.ndjson` when initializing a path.
 
 ## Non-goals (v1)
 

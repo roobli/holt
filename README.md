@@ -44,13 +44,15 @@ Commands operate on a ledger directory:
 ## Local Stack GUI (file-backed)
 
 ```sh
-pnpm gui:dev            # http://127.0.0.1:5174 · ledger ./sample
+pnpm gui:dev            # http://127.0.0.1:5174 · last path or ./sample
 pnpm gui:dev /path/to/ledger
 ```
 
-Push / reorder / history in the GUI update the same files the CLI reads (and vice versa). Details: [gui/README.md](gui/README.md).
+Push / reorder / history in the GUI update the same files the CLI reads (and vice versa). **GUI auto-refreshes** when CLI or an editor changes ledger files (`fs.watch` → SSE). Path bar can validate / **创建** an empty ledger (`tasks/` + `history.ndjson`); last path is stored in `~/.config/holt/gui.json`.
 
-Visual: Stack v1.1 (holt brand, accent `#375A6E`, card heights 48–120px, Views/Lanes, CTA「在本机打开正文 / Noto」).
+Details: [gui/README.md](gui/README.md).
+
+Visual: Stack v1.2 (soft table headers, Detail default collapsed, wide shell). Do not restyle the table shell further — harden ledger wiring instead.
 
 ## Stack demo (mock only)
 

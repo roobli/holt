@@ -1,6 +1,8 @@
-node_modules/
-dist/
-.DS_Store
+**/*.tmp
+**/.holt.lock
 *.log
+.DS_Store
 demo/node_modules/
+dist/
 gui/dist/
+node_modules/

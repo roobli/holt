@@ -683,6 +683,13 @@ body {
   border-color: var(--ink-muted);
 }
 
+.ledger-status {
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
 .push-dialog {
   margin: 10px 0 0;
   padding: 12px;

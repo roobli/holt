@@ -5,7 +5,7 @@
   "type": "module",
   "description": "File-backed personal task stack companion",
   "scripts": {
-    "test": "node --experimental-strip-types --test src/core/*.test.ts src/commands.test.ts",
+    "test": "node --experimental-strip-types --test src/core/*.test.ts src/commands.test.ts gui/config.test.ts gui/api-ledger.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "demo:dev": "vite --config demo/vite.config.ts",
     "demo:build": "vite build --config demo/vite.config.ts",
