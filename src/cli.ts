@@ -6,11 +6,11 @@
  */
 import { resolve } from 'node:path';
 import {
-  listHistory,
-  listLedgerTasks,
+  listTasks,
   pushTask,
+  readHistory,
   reorderTask,
-} from './core/ledger.ts';
+} from './commands.ts';
 
 function usage(): never {
   console.error(`holt — local task stack CLI
@@ -65,7 +65,7 @@ function defaultLedger(positionalRest: string[]): string {
 }
 
 async function cmdList(ledger: string): Promise<void> {
-  const tasks = await listLedgerTasks(ledger);
+  const tasks = await listTasks(ledger);
   if (tasks.length === 0) {
     console.log('(empty stack)');
     return;
@@ -114,6 +114,7 @@ async function cmdPush(
     lane,
     estimate_min,
     where,
+    actor: 'cli',
   });
   console.log(`created ${meta.id} order=${meta.stack_order} lane=${meta.lane}`);
 }
@@ -137,7 +138,7 @@ async function cmdReorder(
     console.error('--to must be a number');
     process.exit(2);
   }
-  const meta = await reorderTask(ledger, id, to);
+  const meta = await reorderTask(ledger, id, to, 'cli');
   console.log(`reordered ${meta.id} → ${meta.stack_order}`);
 }
 
@@ -146,7 +147,7 @@ async function cmdHistory(
   flags: Map<string, string | boolean>,
 ): Promise<void> {
   const taskId = flagStr(flags, 'task');
-  const events = await listHistory(ledger, taskId);
+  const events = await readHistory(ledger, taskId);
   if (events.length === 0) {
     console.log('(no history)');
     return;

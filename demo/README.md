@@ -1,8 +1,16 @@
-# holt Stack demo (v1.1)
+# holt Stack demo (v1.1) — mock only
 
-Clickable prototype of the Stack primary view. In-memory store; optional `localStorage` persistence. Does **not** write real task `.md` files yet.
+Clickable prototype of the Stack primary view. In-memory store; optional `localStorage` persistence. Does **not** write real task `.md` files.
 
-## Run locally
+For the **file-backed** Stack GUI (same semantics as the CLI), use:
+
+```sh
+pnpm gui:dev
+```
+
+See [gui/README.md](../gui/README.md) and the root README. Do not expand this demo further.
+
+## Run locally (mock)
 
 From repo root:
 
@@ -36,7 +44,7 @@ Output: `demo/dist/`.
 - Timeline view (disabled)
 - “在本机打开正文 / Noto” (toast only)
 - No real ledger / history.ndjson I/O
-- File-backed ledger I/O (see root CLI)
+- File-backed ledger I/O lives in CLI + local GUI (`pnpm gui:dev`)
 
 ## GitHub Pages
 

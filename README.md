@@ -6,13 +6,17 @@ Personal **task stack** companion: ordered vertical stack first, optional gantt 
 
 - Each task is a Markdown file; `history.ndjson` is append-only audit
 - Task file = readable current state; history = audit (not pure-replay truth)
-- Implementation order: file model → **CLI** → Stack GUI wired to a local dir → nvim later
+- Implementation order: file model → CLI → **Stack GUI ↔ local dir** → nvim later
 
 ## Status
 
-- File model + **CLI** (list / push / reorder / history) — real surface starting point
+- File model + **CLI** + **local Stack GUI** — same commands over a ledger path
 - Clickable Stack demo on Pages — **mock only** (in-memory); not the product
 - Timeline (gantt) deferred
+
+## Shared commands
+
+CLI and local GUI both use `src/commands.ts` (`listTasks`, `pushTask`, `reorderTask`, `readHistory`, plus GUI helpers `moveTask` / `reorderToIndex` / `updateTask`). Write rules stay in `src/core/ledger.ts`.
 
 ## CLI (local ledger)
 
@@ -37,15 +41,32 @@ Commands operate on a ledger directory:
   history.ndjson
 ```
 
-## Stack demo (mock)
+## Local Stack GUI (file-backed)
+
+```sh
+pnpm gui:dev            # http://127.0.0.1:5174 · ledger ./sample
+pnpm gui:dev /path/to/ledger
+```
+
+Push / reorder / history in the GUI update the same files the CLI reads (and vice versa). Details: [gui/README.md](gui/README.md).
+
+Visual: Stack v1.1 (holt brand, accent `#375A6E`, card heights 48–120px, Views/Lanes, CTA「在本机打开正文 / Noto」).
+
+## Stack demo (mock only)
 
 ```sh
 pnpm demo:dev
 ```
 
-Live Pages (clickable mock only): https://roobli.github.io/holt/
+Live Pages (clickable **mock** only — in-memory / localStorage): https://roobli.github.io/holt/
 
-Details: [demo/README.md](demo/README.md). Do not treat the website as the product.
+Details: [demo/README.md](demo/README.md). **Do not treat the website as the product**; do not expand the demo further.
+
+| Surface | Backing | Command |
+| --- | --- | --- |
+| CLI | ledger dir on disk | `pnpm holt …` |
+| Local GUI | same ledger dir | `pnpm gui:dev` |
+| github.io demo | in-memory mock | `pnpm demo:dev` / Pages |
 
 ## Ledger layout
 
