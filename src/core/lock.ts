@@ -49,7 +49,7 @@ export async function acquireLedgerLock(root: string): Promise<() => Promise<voi
       await sleep(BASE_DELAY_MS + Math.floor(Math.random() * BASE_DELAY_MS));
     }
   }
-  throw new Error('ledger busy: could not acquire .holt.lock (retry later)');
+  throw new Error('ledger busy: 账本正在被占用（CLI 或另一窗口在写），请稍后再试');
 }
 
 export async function withLedgerLock<T>(

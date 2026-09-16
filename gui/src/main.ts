@@ -69,6 +69,18 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
+
+function friendlyError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  if (/ledger busy/i.test(raw) || /\.holt\.lock/i.test(raw)) {
+    return '账本正在被占用（CLI 或另一窗口在写），请稍后再试';
+  }
+  if (/409/.test(raw)) {
+    return '账本正在被占用（CLI 或另一窗口在写），请稍后再试';
+  }
+  return raw;
+}
+
 /** Map estimate_min → block height 48–120px with ease-out curve. */
 function estimateToHeight(estimateMin?: number): number {
   const MIN = 48;
@@ -141,7 +153,7 @@ async function refresh(opts?: { keepSelection?: boolean }): Promise<void> {
       state.historyByTask[state.selectedId] = [...events].reverse();
     }
   } catch (err) {
-    state.error = err instanceof Error ? err.message : String(err);
+    state.error = friendlyError(err);
   } finally {
     state.busy = false;
     render();
@@ -387,7 +399,7 @@ async function selectAndLoad(id: string | null): Promise<void> {
       const { events } = await fetchHistory(id);
       state.historyByTask[id] = [...events].reverse();
     } catch (err) {
-      state.error = err instanceof Error ? err.message : String(err);
+      state.error = friendlyError(err);
     }
   }
   render();
@@ -446,7 +458,7 @@ app.addEventListener('click', (e) => {
         await refresh({ keepSelection: true });
         showToast(`created ${task.id}`);
       } catch (err) {
-        state.error = err instanceof Error ? err.message : String(err);
+        state.error = friendlyError(err);
         state.busy = false;
         render();
       }

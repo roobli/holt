@@ -42,7 +42,7 @@ Both surfaces call `listTasks` / `pushTask` / `reorderTask` / `readHistory` (plu
 
 - Task files: atomic write (temp + rename)
 - Mutations: `.holt.lock` with retry so concurrent CLI+GUI push/reorder do not interleave mid-write
-- API surfaces lock contention as HTTP 409 (`ledger busy…`)
+- API surfaces lock contention as HTTP 409 with a plain-language message (账本正在被占用…)
 
 ## What works
 
