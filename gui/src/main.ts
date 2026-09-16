@@ -23,6 +23,7 @@ interface UiState {
   error: string | null;
   pushWhere: 'top' | 'bottom' | null;
   busy: boolean;
+  detailCollapsed: boolean;
 }
 
 const state: UiState = {
@@ -132,15 +133,6 @@ async function refresh(opts?: { keepSelection?: boolean }): Promise<void> {
   }
 }
 
-function cardMetaLine(task: HoltTaskMeta, compact: boolean): string {
-  if (compact) {
-    return task.estimate_min != null ? `${task.estimate_min}m` : '';
-  }
-  const parts = [task.status, task.lane];
-  if (task.estimate_min != null) parts.push(`${task.estimate_min}m`);
-  return parts.join(' · ');
-}
-
 function renderCard(
   task: HoltTaskMeta,
   selected: boolean,
@@ -148,22 +140,18 @@ function renderCard(
   total: number,
 ): string {
   const h = estimateToHeight(task.estimate_min);
-  const compact = !selected && h <= 64;
-  const meta = compact
-    ? ''
-    : `<div class="stack-card-meta">${escapeHtml(cardMetaLine(task, false))}</div>`;
-  const aside =
-    compact && task.estimate_min != null
-      ? `<div class="stack-card-estimate">${task.estimate_min}m</div>`
-      : '';
+  const est = task.estimate_min != null ? `${task.estimate_min}m` : '—';
 
   return `
     <div class="stack-card${selected ? ' is-selected' : ''}" style="min-height:${h}px" data-id="${task.id}" draggable="true" role="button" tabindex="0" aria-pressed="${selected}">
-      <div class="stack-card-body">
-        <div class="stack-card-title">${escapeHtml(task.title)}</div>
-        ${meta}
+      <div class="stack-card-cols">
+        <div class="stack-col stack-col-task">
+          <div class="stack-card-title">${escapeHtml(task.title)}</div>
+        </div>
+        <div class="stack-col stack-col-status">${escapeHtml(task.status)}</div>
+        <div class="stack-col stack-col-lane">${escapeHtml(task.lane)}</div>
+        <div class="stack-col stack-col-est">${escapeHtml(est)}</div>
       </div>
-      ${aside}
       <div class="stack-card-actions" data-actions>
         <button type="button" data-move="up" title="上移" ${index === 0 ? 'disabled' : ''}>↑</button>
         <button type="button" data-move="down" title="下移" ${index >= total - 1 ? 'disabled' : ''}>↓</button>
@@ -270,6 +258,17 @@ function render(): void {
     { id: 'openjobs', label: 'openjobs' },
   ];
 
+  const softHeader = `
+        <div class="stack-soft-header-row" aria-hidden="true">
+          <div class="stack-soft-header">
+            <div class="stack-col stack-col-task">任务</div>
+            <div class="stack-col stack-col-status">状态</div>
+            <div class="stack-col stack-col-lane">lane</div>
+            <div class="stack-col stack-col-est">估时</div>
+          </div>
+          <div class="stack-soft-header-gutter"></div>
+        </div>`;
+
   const stackBody =
     tasks.length === 0
       ? `
@@ -278,7 +277,7 @@ function render(): void {
           <p>本地 ledger 暂无任务。从上下入口压入第一条，文件会写入 tasks/*.md。</p>
         </div>
       `
-      : `<div class="stack-list">${tasks
+      : `${softHeader}<div class="stack-list">${tasks
           .map((t, i) => renderCard(t, t.id === state.selectedId, i, tasks.length))
           .join('')}</div>`;
 
@@ -319,7 +318,7 @@ function render(): void {
           <div class="main-header-row">
             <div>
               <h1>Stack</h1>
-              <p class="main-sub">优先序 · 拖拽 reorder · 主列吃满可用宽</p>
+              <p class="main-sub">软列对齐，无格线，仍是栈卡 · 拖拽 reorder · 主列吃满可用宽</p>
             </div>
             <button type="button" class="detail-toggle" data-detail-toggle>
               ${state.detailCollapsed ? 'Detail' : '收起 ›'}
@@ -337,7 +336,7 @@ function render(): void {
         ${renderPushDialog()}
         ${stackBody}
         <button type="button" class="push-btn" data-push="bottom" ${state.busy ? 'disabled' : ''}>+ 压入栈底</button>
-        <p class="main-foot">块高 48–120px · 读写 tasks/*.md + history.ndjson · 非 github.io mock</p>
+        <p class="main-foot">软表格：淡字表头 + 列对齐元数据 · 无竖线/无斑马/圆角卡间隙 · 块高 48–120px</p>
       </main>
 
       <aside class="detail">

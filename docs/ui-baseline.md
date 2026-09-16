@@ -4,6 +4,7 @@
   - Left rail ~200px (Views / Lanes)
   - Stack `1fr` eats remaining width — **no** page `max-width` centered shell
   - Detail ~280px; **default collapsed on large screens**, expand when a card is selected
+  - Soft table headers (任务 · 状态 · lane · 估时): faint labels, not sortable; column-aligned meta; no vertical guides/zebra/cell grid; tall-row meta top-aligned
   - Block height from `estimate_min` capped 48–120px; drag primary; accent `#375A6E`
   - CTA: 「在本机打开正文 / Noto」
 - **Secondary:** gantt-style Timeline (due / time-block); deferred; three-slot encoding when built.
