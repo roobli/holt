@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import {
   completeProject,
+  ensureLedger,
+  inspectLedgerDetailed,
   listTasks,
   moveTask,
+  openTaskBody,
   pushTask,
   readHistory,
   reorderToIndex,
@@ -187,4 +190,31 @@ test('complete-project fails whole batch on external open blocker', async () => 
   const tasks = await listTasks(root);
   assert.equal(tasks.find((t) => t.id === a.id)!.status, 'open');
   assert.equal(tasks.find((t) => t.id === ext.id)!.status, 'open');
+});
+
+test('openTaskBody resolves path and runs --editor', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'holt-open-'));
+  await ensureLedger(root);
+  const a = await pushTask(root, { title: 'Open', lane: 'work', actor: 'test' });
+  const stamp = join(root, 'opened.txt');
+  const editorScript = join(root, 'fake-editor.mjs');
+  await writeFile(
+    editorScript,
+    `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(stamp)}, process.argv[2] ?? '');\n`,
+  );
+  const result = await openTaskBody(root, a.id, { editor: `node ${editorScript}` });
+  assert.ok(result.path.endsWith(`${a.id}.md`));
+  assert.equal(result.opened, true);
+  assert.equal(result.via, 'editor');
+  assert.equal(await readFile(stamp, 'utf8'), result.path);
+});
+
+test('inspectLedgerDetailed reports counts', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'holt-insp-'));
+  await ensureLedger(root);
+  await pushTask(root, { title: 'One', lane: 'work', actor: 'test' });
+  const info = await inspectLedgerDetailed(root);
+  assert.equal(info.ready, true);
+  assert.equal(info.task_count, 1);
+  assert.equal(info.history_exists, true);
 });

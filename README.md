@@ -16,7 +16,7 @@ Personal **task stack** companion: ordered vertical stack first, optional gantt 
 
 ## Shared commands
 
-CLI and local GUI both use `src/commands.ts` (`listTasks`, `pushTask`, `reorderTask`, `readHistory`, plus GUI helpers `moveTask` / `reorderToIndex` / `updateTask`). Write rules stay in `src/core/ledger.ts`.
+CLI and local GUI both use `src/commands.ts` (`listTasks`, `pushTask`, `reorderTask`, `readHistory`, `updateTask`, `completeProject`, `ensureLedger` / `inspectLedger`, `openTaskBody`, plus GUI helpers `moveTask` / `reorderToIndex`). Write rules stay in `src/core/ledger.ts`.
 
 ## CLI (local ledger)
 
@@ -24,20 +24,23 @@ CLI and local GUI both use `src/commands.ts` (`listTasks`, `pushTask`, `reorderT
 pnpm install
 # from repo root; default ledger is ./sample
 pnpm holt list
-pnpm holt list --project holt-mvp
+pnpm holt list --project holt-mvp --json
 pnpm holt push --title "Ship CLI" --lane work --estimate 2h --project holt-mvp --top
 pnpm holt update T-0002 --blocked-by T-0001 --estimate 1d
 pnpm holt update T-0002 --add-blocked-by T-0003
 pnpm holt update T-0001 --status done
 pnpm holt complete-project holt-mvp
 pnpm holt reorder T-0001 --to 10
-pnpm holt history --task T-0001
+pnpm holt history --task T-0001 --json
+pnpm holt open-body T-0001          # $EDITOR / xdg-open / open
+pnpm holt ensure-ledger /tmp/my-holt
+pnpm holt inspect ./sample --json
 
 # or via bin after link:
 pnpm link --global   # optional
 holt list ./sample
 ```
-Estimate accepts `45m` / `2h` / `1d` (1d = 8h) or a bare minute number. Soft table headers stay four columns (no deps/project columns).
+Estimate accepts `45m` / `2h` / `1d` (1d = 8h) or a bare minute number. Soft table headers stay four columns (no deps/project columns). `--json` on `list` / `history` / `inspect` prints stable machine JSON on stdout.
 
 Commands operate on a ledger directory:
 

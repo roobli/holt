@@ -2,6 +2,8 @@
  * Shared ledger commands — CLI and local GUI adapters call these only.
  * Write rules live in src/core/ledger.ts; this module is the stable surface.
  */
+import { access } from 'node:fs/promises';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   listLedgerTasks,
   listHistory,
@@ -328,4 +330,89 @@ export function filterTasksByProject(
 ): HoltTaskMeta[] {
   if (project == null || project === '') return [...tasks];
   return tasks.filter((t) => t.project === project);
+}
+
+export interface OpenTaskBodyOptions {
+  /** Override $EDITOR / $VISUAL (e.g. CLI --editor). */
+  editor?: string;
+  /**
+   * When true (default), wait for EDITOR to exit.
+   * Platform openers (xdg-open / open) are always detached.
+   */
+  wait?: boolean;
+}
+
+/**
+ * Resolve task md path and open with $EDITOR / xdg-open / open
+ * (same spirit as GUI CTA「在本机打开正文」).
+ */
+export async function openTaskBody(
+  root: string,
+  id: string,
+  opts: OpenTaskBodyOptions = {},
+): Promise<{ path: string; opened: boolean; via: string }> {
+  const { path } = await readTaskFile(root, id);
+  const editor = opts.editor?.trim() || process.env.EDITOR || process.env.VISUAL;
+  if (editor) {
+    const wait = opts.wait !== false;
+    // EDITOR / --editor is a shell command line; path is appended as one argv.
+    const cmdline = `${editor} ${JSON.stringify(path)}`;
+    if (wait) {
+      const result = spawnSync(cmdline, { stdio: 'inherit', shell: true });
+      if (result.error) throw result.error;
+      if (result.status != null && result.status !== 0) {
+        throw new Error(`editor exited ${result.status}: ${editor}`);
+      }
+    } else {
+      spawn(cmdline, { detached: true, stdio: 'ignore', shell: true }).unref();
+    }
+    return { path, opened: true, via: 'editor' };
+  }
+
+  const platform = process.platform;
+  try {
+    if (platform === 'darwin') {
+      spawn('open', [path], { detached: true, stdio: 'ignore' }).unref();
+    } else if (platform === 'win32') {
+      spawn('cmd', ['/c', 'start', '', path], { detached: true, stdio: 'ignore' }).unref();
+    } else {
+      spawn('xdg-open', [path], { detached: true, stdio: 'ignore' }).unref();
+    }
+    return { path, opened: true, via: 'platform' };
+  } catch {
+    return { path, opened: false, via: 'none' };
+  }
+}
+
+/** Enriched inspect for CLI / scripts (does not mutate). */
+export async function inspectLedgerDetailed(root: string): Promise<{
+  root: string;
+  tasksDir: string;
+  historyPath: string;
+  exists: boolean;
+  ready: boolean;
+  task_count: number;
+  history_exists: boolean;
+}> {
+  const status = await inspectLedger(root);
+  let task_count = 0;
+  let history_exists = false;
+  if (status.ready) {
+    task_count = (await listTasks(root)).length;
+  }
+  try {
+    await access(status.historyPath);
+    history_exists = true;
+  } catch {
+    /* */
+  }
+  return {
+    root: status.root,
+    tasksDir: status.tasksDir,
+    historyPath: status.historyPath,
+    exists: status.exists,
+    ready: status.ready,
+    task_count,
+    history_exists,
+  };
 }

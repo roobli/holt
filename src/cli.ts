@@ -8,8 +8,11 @@ import { resolve } from 'node:path';
 import {
   completeProject,
   displayEstimate,
+  ensureLedger,
   filterTasksByProject,
+  inspectLedgerDetailed,
   listTasks,
+  openTaskBody,
   pushTask,
   readHistory,
   reorderTask,
@@ -22,16 +25,20 @@ function usage(): never {
   console.error(`holt — local task stack CLI
 
 Usage:
-  holt list [ledger] [--project <slug>]
+  holt list [ledger] [--project <slug>] [--json]
   holt push [ledger] --title <t> --lane <lane> [--estimate 45m|2h|1d] [--project <slug>] [--blocked-by id,id] [--top|--bottom]
   holt update [ledger] <id> [--status s] [--lane l] [--title t] [--estimate 2h] [--project slug]
                           [--blocked-by id,id] [--add-blocked-by id] [--rm-blocked-by id]
   holt complete-project [ledger] <slug>
   holt reorder [ledger] <id> --to <stack_order>
-  holt history [ledger] [--task <id>]
+  holt history [ledger] [--task <id>] [--json]
+  holt open-body [ledger] <id> [--editor <cmd>]
+  holt ensure-ledger <path>
+  holt inspect [ledger] [--json]
 
 Default ledger: ./sample
 Estimate: 45m / 2h / 1d (1d = 8h); bare number = minutes.
+--json: machine-stable stdout for list / history / inspect.
 `);
   process.exit(2);
 }
@@ -48,7 +55,7 @@ function parseArgs(argv: string[]) {
     }
     if (a.startsWith('--')) {
       const key = a.slice(2);
-      if (key === 'top' || key === 'bottom' || key === 'help') {
+      if (key === 'top' || key === 'bottom' || key === 'help' || key === 'json') {
         flags.set(key, true);
         continue;
       }
@@ -106,6 +113,10 @@ async function cmdList(
   const project = flagStr(flags, 'project');
   let tasks = await listTasks(ledger);
   tasks = filterTasksByProject(tasks, project);
+  if (flags.has('json')) {
+    console.log(JSON.stringify(tasks));
+    return;
+  }
   if (tasks.length === 0) {
     console.log('(empty stack)');
     return;
@@ -270,6 +281,10 @@ async function cmdHistory(
 ): Promise<void> {
   const taskId = flagStr(flags, 'task');
   const events = await readHistory(ledger, taskId);
+  if (flags.has('json')) {
+    console.log(JSON.stringify(events));
+    return;
+  }
   if (events.length === 0) {
     console.log('(no history)');
     return;
@@ -278,6 +293,45 @@ async function cmdHistory(
     const data = e.data ? ` ${JSON.stringify(e.data)}` : '';
     console.log(`${e.time}  ${e.event}  ${e.task_id}${data}`);
   }
+}
+
+async function cmdOpenBody(
+  ledger: string,
+  id: string | undefined,
+  flags: Map<string, string | boolean>,
+): Promise<void> {
+  if (!id) {
+    console.error('open-body requires <id>');
+    process.exit(2);
+  }
+  const editor = flagStr(flags, 'editor');
+  const result = await openTaskBody(ledger, id, { editor });
+  console.log(result.path);
+}
+
+async function cmdEnsureLedger(pathArg: string | undefined): Promise<void> {
+  if (!pathArg) {
+    console.error('ensure-ledger requires <path>');
+    process.exit(2);
+  }
+  const paths = await ensureLedger(pathArg);
+  console.log(`ledger ready: ${paths.root}`);
+}
+
+async function cmdInspect(
+  ledger: string,
+  flags: Map<string, string | boolean>,
+): Promise<void> {
+  const info = await inspectLedgerDetailed(ledger);
+  if (flags.has('json')) {
+    console.log(JSON.stringify(info));
+    return;
+  }
+  console.log(`root: ${info.root}`);
+  console.log(`exists: ${info.exists}`);
+  console.log(`ready: ${info.ready}`);
+  console.log(`tasks: ${info.task_count}`);
+  console.log(`history: ${info.history_exists ? 'yes' : 'no'}`);
 }
 
 async function main(): Promise<void> {
@@ -327,6 +381,20 @@ async function main(): Promise<void> {
     }
     case 'history': {
       await cmdHistory(defaultLedger(rest), flags);
+      break;
+    }
+    case 'open-body': {
+      const { ledger, id } = ledgerAndId(rest);
+      await cmdOpenBody(ledger, id, flags);
+      break;
+    }
+    case 'ensure-ledger': {
+      const pathArg = rest[0];
+      await cmdEnsureLedger(pathArg ? resolve(pathArg) : undefined);
+      break;
+    }
+    case 'inspect': {
+      await cmdInspect(defaultLedger(rest), flags);
       break;
     }
     default:
