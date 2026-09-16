@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "demo:dev": "vite --config demo/vite.config.ts",
     "demo:build": "vite build --config demo/vite.config.ts",
-    "demo:preview": "vite preview --config demo/vite.config.ts"
+    "demo:preview": "vite preview --config demo/vite.config.ts",
+    "holt": "node --experimental-strip-types src/cli.ts"
   },
   "engines": {
     "node": ">=22"
@@ -18,5 +19,8 @@
     "@types/node": "^22.13.10",
     "typescript": "^5.8.2",
     "vite": "^6.2.0"
+  },
+  "bin": {
+    "holt": "./bin/holt.mjs"
   }
 }
