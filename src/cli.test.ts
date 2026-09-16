@@ -119,3 +119,83 @@ test('cli update done-guard refuses open blockers', async () => {
   assert.notEqual(fail.status, 0);
   assert.match(fail.stderr, /无法标完成/);
 });
+
+test('cli ledger resolution: arg > HOLT_LEDGER > config lastLedger > sample', async () => {
+  const xdg = await mkdtemp(join(tmpdir(), 'holt-cli-res-'));
+  const ledgerA = await mkdtemp(join(tmpdir(), 'holt-cli-a-'));
+  const ledgerB = await mkdtemp(join(tmpdir(), 'holt-cli-b-'));
+  const ledgerC = await mkdtemp(join(tmpdir(), 'holt-cli-c-'));
+  holt(['ensure-ledger', ledgerA], { env: { XDG_CONFIG_HOME: xdg, HOLT_LEDGER: '' } });
+  holt(['ensure-ledger', ledgerB], { env: { XDG_CONFIG_HOME: xdg, HOLT_LEDGER: '' } });
+  holt(['ensure-ledger', ledgerC], { env: { XDG_CONFIG_HOME: xdg, HOLT_LEDGER: '' } });
+
+  // seed config lastLedger = A
+  await pushTask(ledgerA, { title: 'in-A', lane: 'work', actor: 'test' });
+  const seed = holt(['list', ledgerA, '--json'], {
+    env: { XDG_CONFIG_HOME: xdg, HOLT_LEDGER: '' },
+  });
+  assert.equal(seed.status, 0, seed.stderr);
+
+  // no arg, no env → config A
+  const fromCfg = holt(['list', '--json'], {
+    env: { XDG_CONFIG_HOME: xdg, HOLT_LEDGER: '' },
+  });
+  assert.equal(fromCfg.status, 0, fromCfg.stderr);
+  const cfgTasks = JSON.parse(fromCfg.stdout) as Array<{ title: string }>;
+  assert.equal(cfgTasks[0]?.title, 'in-A');
+
+  // env beats config
+  await pushTask(ledgerB, { title: 'in-B', lane: 'work', actor: 'test' });
+  const fromEnv = holt(['list', '--json'], {
+    env: { XDG_CONFIG_HOME: xdg, HOLT_LEDGER: ledgerB },
+  });
+  assert.equal(fromEnv.status, 0, fromEnv.stderr);
+  const envTasks = JSON.parse(fromEnv.stdout) as Array<{ title: string }>;
+  assert.equal(envTasks[0]?.title, 'in-B');
+
+  // explicit arg beats env
+  await pushTask(ledgerC, { title: 'in-C', lane: 'work', actor: 'test' });
+  const fromArg = holt(['list', ledgerC, '--json'], {
+    env: { XDG_CONFIG_HOME: xdg, HOLT_LEDGER: ledgerB },
+  });
+  assert.equal(fromArg.status, 0, fromArg.stderr);
+  const argTasks = JSON.parse(fromArg.stdout) as Array<{ title: string }>;
+  assert.equal(argTasks[0]?.title, 'in-C');
+
+  // successful explicit path updates lastLedger (config now C)
+  const after = holt(['list', '--json'], {
+    env: { XDG_CONFIG_HOME: xdg, HOLT_LEDGER: '' },
+  });
+  assert.equal(after.status, 0, after.stderr);
+  const afterTasks = JSON.parse(after.stdout) as Array<{ title: string }>;
+  assert.equal(afterTasks[0]?.title, 'in-C');
+});
+
+test('cli does not update lastLedger when using env-only resolve', async () => {
+  const xdg = await mkdtemp(join(tmpdir(), 'holt-cli-norem-'));
+  const ledgerA = await mkdtemp(join(tmpdir(), 'holt-cli-na-'));
+  const ledgerB = await mkdtemp(join(tmpdir(), 'holt-cli-nb-'));
+  holt(['ensure-ledger', ledgerA], { env: { XDG_CONFIG_HOME: xdg, HOLT_LEDGER: '' } });
+  holt(['ensure-ledger', ledgerB], { env: { XDG_CONFIG_HOME: xdg, HOLT_LEDGER: '' } });
+  await pushTask(ledgerA, { title: 'stay-A', lane: 'work', actor: 'test' });
+  await pushTask(ledgerB, { title: 'env-B', lane: 'work', actor: 'test' });
+
+  // set config to A via explicit list
+  assert.equal(
+    holt(['list', ledgerA, '--json'], { env: { XDG_CONFIG_HOME: xdg, HOLT_LEDGER: '' } }).status,
+    0,
+  );
+
+  // operate via env B — should not overwrite lastLedger
+  assert.equal(
+    holt(['list', '--json'], { env: { XDG_CONFIG_HOME: xdg, HOLT_LEDGER: ledgerB } }).status,
+    0,
+  );
+
+  const back = holt(['list', '--json'], {
+    env: { XDG_CONFIG_HOME: xdg, HOLT_LEDGER: '' },
+  });
+  assert.equal(back.status, 0, back.stderr);
+  const tasks = JSON.parse(back.stdout) as Array<{ title: string }>;
+  assert.equal(tasks[0]?.title, 'stay-A');
+});

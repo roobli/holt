@@ -8,7 +8,7 @@ From repo root:
 
 ```sh
 pnpm install
-pnpm gui:dev            # ledger: CLI arg → ~/.config/holt/gui.json lastLedger → ./sample
+pnpm gui:dev            # ledger: arg → $HOLT_LEDGER → ~/.config/holt/config.json lastLedger → ./sample
 pnpm gui:dev ./sample   # or any ledger path
 ```
 
@@ -24,7 +24,7 @@ The process serves Vite UI + `/api/*` that reads/writes `tasks/*.md` and `histor
 
 - **打开** — switch to path; errors if missing or not a ledger (`tasks/` absent)
 - **创建** — shown when path is not ready; creates `tasks/` + empty `history.ndjson`
-- Last opened path remembered in `~/.config/holt/gui.json` (not only the URL)
+- Last opened path remembered in `~/.config/holt/config.json` (shared with CLI; legacy `gui.json` still read)
 
 ## Shared with CLI
 

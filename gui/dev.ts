@@ -1,28 +1,31 @@
 /**
  * Local Stack GUI: Vite UI + /api filesystem ledger (shared commands).
  * Usage: node --experimental-strip-types gui/dev.ts [ledger]
- * Default ledger: CLI arg → ~/.config/holt/gui.json lastLedger → ./sample
+ * Default ledger: arg → HOLT_LEDGER → ~/.config/holt/config.json lastLedger → ./sample
+ * (fallback ./sample is the repo sample dir, not cwd)
  */
 import { createServer } from 'node:http';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer as createViteServer } from 'vite';
 import { createApiState, handleApi, restartLedgerWatch } from './api.ts';
-import { loadGuiConfig, saveGuiConfig } from './config.ts';
+import { saveGuiConfig } from './config.ts';
+import { resolveLedger } from '../src/core/resolve-ledger.ts';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(root, '..');
 const port = Number(process.env.HOLT_GUI_PORT ?? 5174);
 
-async function resolveDefaultLedger(): Promise<string> {
-  if (process.argv[2]) return resolve(process.argv[2]);
-  const cfg = await loadGuiConfig();
-  if (cfg.lastLedger) return resolve(cfg.lastLedger);
-  return resolve(repoRoot, 'sample');
+async function resolveGuiDefaultLedger(): Promise<string> {
+  const argvLedger = process.argv[2]?.trim() || null;
+  if (argvLedger) return (await resolveLedger(argvLedger)).path;
+  const r = await resolveLedger(null);
+  if (r.source === 'fallback') return resolve(repoRoot, 'sample');
+  return r.path;
 }
 
 async function main(): Promise<void> {
-  const ledgerArg = await resolveDefaultLedger();
+  const ledgerArg = await resolveGuiDefaultLedger();
   const apiState = createApiState(ledgerArg);
   await saveGuiConfig({ lastLedger: apiState.ledgerRoot });
   restartLedgerWatch(apiState);

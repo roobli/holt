@@ -2,7 +2,15 @@
 /**
  * holt CLI — local-first ledger surface (file model).
  * Usage: holt <command> [ledger] [options]
- * Default ledger: ./sample
+ *
+ * Default ledger resolution:
+ *   1. Explicit [ledger] positional
+ *   2. HOLT_LEDGER env
+ *   3. Shared config lastLedger (~/.config/holt/config.json)
+ *   4. Fallback ./sample
+ *
+ * After a successful command with an explicit ledger path, lastLedger is updated
+ * (same as GUI open) so CLI and GUI stay in sync.
  */
 import { resolve } from 'node:path';
 import {
@@ -20,6 +28,7 @@ import {
   type UpdateTaskPatch,
 } from './commands.ts';
 import type { HoltStatus } from './core/types.ts';
+import { rememberLastLedger, resolveLedger } from './core/resolve-ledger.ts';
 
 function usage(): never {
   console.error(`holt — local task stack CLI
@@ -36,7 +45,7 @@ Usage:
   holt ensure-ledger <path>
   holt inspect [ledger] [--json]
 
-Default ledger: ./sample
+Default ledger: explicit arg → HOLT_LEDGER → ~/.config/holt/config.json lastLedger → ./sample
 Estimate: 45m / 2h / 1d (1d = 8h); bare number = minutes.
 --json: machine-stable stdout for list / history / inspect.
 `);
@@ -77,22 +86,57 @@ function flagStr(flags: Map<string, string | boolean>, key: string): string | un
   return typeof v === 'string' ? v : undefined;
 }
 
-function defaultLedger(positionalRest: string[]): string {
-  return resolve(positionalRest[0] ?? './sample');
+function looksLikeTaskId(s: string): boolean {
+  return /^T-\d+$/i.test(s);
+}
+
+/** Resolve ledger for commands that take optional [ledger] only. */
+async function resolveOptionalLedger(
+  positionalRest: string[],
+): Promise<{ path: string; fromExplicit: boolean }> {
+  const explicit = positionalRest[0];
+  const r = await resolveLedger(explicit);
+  return { path: r.path, fromExplicit: r.fromExplicit };
 }
 
 /** Resolve ledger + trailing id when command is `cmd [ledger] <id>`. */
-function ledgerAndId(rest: string[]): { ledger: string; id: string | undefined } {
+async function ledgerAndId(
+  rest: string[],
+): Promise<{ ledger: string; id: string | undefined; fromExplicit: boolean }> {
   if (rest.length >= 2) {
-    return { ledger: resolve(rest[0]!), id: rest[1] };
+    const r = await resolveLedger(rest[0]);
+    return { ledger: r.path, id: rest[1], fromExplicit: true };
   }
   if (rest.length === 1) {
-    if (/^T-\d+$/i.test(rest[0]!)) {
-      return { ledger: resolve('./sample'), id: rest[0] };
+    if (looksLikeTaskId(rest[0]!)) {
+      const r = await resolveLedger(null);
+      return { ledger: r.path, id: rest[0], fromExplicit: false };
     }
-    return { ledger: resolve(rest[0]!), id: undefined };
+    const r = await resolveLedger(rest[0]);
+    return { ledger: r.path, id: undefined, fromExplicit: true };
   }
-  return { ledger: resolve('./sample'), id: undefined };
+  const r = await resolveLedger(null);
+  return { ledger: r.path, id: undefined, fromExplicit: false };
+}
+
+/** Resolve ledger + slug for `complete-project [ledger] <slug>`. */
+async function ledgerAndSlug(
+  rest: string[],
+): Promise<{ ledger: string; slug: string | undefined; fromExplicit: boolean }> {
+  if (rest.length >= 2) {
+    const r = await resolveLedger(rest[0]);
+    return { ledger: r.path, slug: rest[1], fromExplicit: true };
+  }
+  if (rest.length === 1) {
+    const r = await resolveLedger(null);
+    return { ledger: r.path, slug: rest[0], fromExplicit: false };
+  }
+  const r = await resolveLedger(null);
+  return { ledger: r.path, slug: undefined, fromExplicit: false };
+}
+
+async function maybeRemember(path: string, fromExplicit: boolean): Promise<void> {
+  if (fromExplicit) await rememberLastLedger(path);
 }
 
 function parseIdList(raw: string | undefined): string[] | undefined {
@@ -344,57 +388,57 @@ async function main(): Promise<void> {
 
   switch (cmd) {
     case 'list': {
-      // holt list [ledger] [--project x] — ledger is first positional if not looking like a flag
-      await cmdList(defaultLedger(rest), flags);
+      const { path, fromExplicit } = await resolveOptionalLedger(rest);
+      await cmdList(path, flags);
+      await maybeRemember(path, fromExplicit);
       break;
     }
     case 'push': {
-      await cmdPush(defaultLedger(rest), flags);
+      const { path, fromExplicit } = await resolveOptionalLedger(rest);
+      await cmdPush(path, flags);
+      await maybeRemember(path, fromExplicit);
       break;
     }
     case 'update': {
-      const { ledger, id } = ledgerAndId(rest);
+      const { ledger, id, fromExplicit } = await ledgerAndId(rest);
       await cmdUpdate(ledger, id, flags);
+      await maybeRemember(ledger, fromExplicit);
       break;
     }
     case 'complete-project': {
-      // holt complete-project [ledger] <slug>
-      let ledger: string;
-      let slug: string | undefined;
-      if (rest.length >= 2) {
-        ledger = resolve(rest[0]!);
-        slug = rest[1];
-      } else if (rest.length === 1) {
-        ledger = resolve('./sample');
-        slug = rest[0];
-      } else {
-        ledger = resolve('./sample');
-        slug = undefined;
-      }
+      const { ledger, slug, fromExplicit } = await ledgerAndSlug(rest);
       await cmdCompleteProject(ledger, slug);
+      await maybeRemember(ledger, fromExplicit);
       break;
     }
     case 'reorder': {
-      const { ledger, id } = ledgerAndId(rest);
+      const { ledger, id, fromExplicit } = await ledgerAndId(rest);
       await cmdReorder(ledger, id, flags);
+      await maybeRemember(ledger, fromExplicit);
       break;
     }
     case 'history': {
-      await cmdHistory(defaultLedger(rest), flags);
+      const { path, fromExplicit } = await resolveOptionalLedger(rest);
+      await cmdHistory(path, flags);
+      await maybeRemember(path, fromExplicit);
       break;
     }
     case 'open-body': {
-      const { ledger, id } = ledgerAndId(rest);
+      const { ledger, id, fromExplicit } = await ledgerAndId(rest);
       await cmdOpenBody(ledger, id, flags);
+      await maybeRemember(ledger, fromExplicit);
       break;
     }
     case 'ensure-ledger': {
-      const pathArg = rest[0];
-      await cmdEnsureLedger(pathArg ? resolve(pathArg) : undefined);
+      const pathArg = rest[0] ? resolve(rest[0]) : undefined;
+      await cmdEnsureLedger(pathArg);
+      if (pathArg) await rememberLastLedger(pathArg);
       break;
     }
     case 'inspect': {
-      await cmdInspect(defaultLedger(rest), flags);
+      const { path, fromExplicit } = await resolveOptionalLedger(rest);
+      await cmdInspect(path, flags);
+      await maybeRemember(path, fromExplicit);
       break;
     }
     default:

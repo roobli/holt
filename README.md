@@ -22,7 +22,7 @@ CLI and local GUI both use `src/commands.ts` (`listTasks`, `pushTask`, `reorderT
 
 ```sh
 pnpm install
-# from repo root; default ledger is ./sample
+# from repo root; default ledger: arg → $HOLT_LEDGER → ~/.config/holt/config.json lastLedger → ./sample
 pnpm holt list
 pnpm holt list --project holt-mvp --json
 pnpm holt push --title "Ship CLI" --lane work --estimate 2h --project holt-mvp --top
@@ -53,11 +53,11 @@ Commands operate on a ledger directory:
 ## Local Stack GUI (file-backed)
 
 ```sh
-pnpm gui:dev            # http://127.0.0.1:5174 · last path or ./sample
+pnpm gui:dev            # http://127.0.0.1:5174 · arg → $HOLT_LEDGER → lastLedger → ./sample
 pnpm gui:dev /path/to/ledger
 ```
 
-Push / reorder / history in the GUI update the same files the CLI reads (and vice versa). **GUI auto-refreshes** when CLI or an editor changes ledger files (`fs.watch` → SSE). Path bar can validate / **创建** an empty ledger (`tasks/` + `history.ndjson`); last path is stored in `~/.config/holt/gui.json`.
+Push / reorder / history in the GUI update the same files the CLI reads (and vice versa). **GUI auto-refreshes** when CLI or an editor changes ledger files (`fs.watch` → SSE). Path bar can validate / **创建** an empty ledger (`tasks/` + `history.ndjson`); last path is stored in `~/.config/holt/config.json` (shared with CLI; legacy `gui.json` still read). See [docs/ledger-resolution.md](docs/ledger-resolution.md).
 
 Details: [gui/README.md](gui/README.md).
 
