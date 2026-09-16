@@ -4,7 +4,13 @@ import { mkdtemp, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { createApiState, handleApi, restartLedgerWatch } from './api.ts';
+import {
+  createApiState,
+  handleApi,
+  restartLedgerWatch,
+  shouldIgnoreWatchName,
+  stopLedgerWatch,
+} from './api.ts';
 import { inspectLedger, pushTask } from '../src/commands.ts';
 
 function listen(handler: (req: IncomingMessage, res: ServerResponse) => void): Promise<{
@@ -50,7 +56,7 @@ async function withApi(
     assert.equal(created.status, 200);
     await fn(port, state, root);
   } finally {
-    state.watcher?.close();
+    stopLedgerWatch(state);
     await close();
   }
 }
@@ -99,7 +105,7 @@ test('POST /api/ledger validates and can create empty ledger', async () => {
     assert.equal(ledger.root, body.root);
     assert.equal(ledger.ready, true);
   } finally {
-    state.watcher?.close();
+    stopLedgerWatch(state);
     await close();
   }
 });
@@ -205,5 +211,101 @@ test('POST /api/complete-project all-or-nothing (GUI button wiring)', async () =
     const result = (await ok.json()) as { project: string; task_ids: string[] };
     assert.equal(result.project, 'holt-mvp');
     assert.equal(result.task_ids.length, 1);
+  });
+});
+
+
+test('shouldIgnoreWatchName skips lock/tmp/dot basenames', () => {
+  assert.equal(shouldIgnoreWatchName('.holt.lock'), true);
+  assert.equal(shouldIgnoreWatchName('tasks/.holt.lock'), true);
+  assert.equal(shouldIgnoreWatchName('.T-0001.1.tmp'), true);
+  assert.equal(shouldIgnoreWatchName('T-0001.md'), false);
+  assert.equal(shouldIgnoreWatchName('history.ndjson'), false);
+  assert.equal(shouldIgnoreWatchName(null), false);
+});
+
+test('fs.watch tasks/+history SSE fires on CLI-like push (non-recursive)', async () => {
+  await withApi(async (port, state, root) => {
+    restartLedgerWatch(state);
+    // allow inspect+attach
+    await new Promise((r) => setTimeout(r, 50));
+
+    const ledger = await fetch(`http://127.0.0.1:${port}/api/ledger`);
+    const info = (await ledger.json()) as { watching?: boolean };
+    assert.equal(info.watching, true);
+
+    const change = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('SSE change timeout')), 3000);
+      void (async () => {
+        const res = await fetch(`http://127.0.0.1:${port}/api/watch`);
+        assert.ok(res.body);
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          if (buf.includes('"type":"change"')) {
+            clearTimeout(timer);
+            try {
+              await reader.cancel();
+            } catch {
+              /* */
+            }
+            resolve();
+            return;
+          }
+        }
+        clearTimeout(timer);
+        reject(new Error('SSE closed without change'));
+      })().catch(reject);
+    });
+
+    // Write after SSE connected
+    await new Promise((r) => setTimeout(r, 80));
+    await pushTask(root, { title: 'watched', lane: 'work', actor: 'test' });
+    await change;
+  });
+});
+
+test('POST /api/open returns honest opened=false when headless (no editor)', async () => {
+  await withApi(async (port, _state, root) => {
+    const task = await pushTask(root, { title: 'Open me', lane: 'work', actor: 'test' });
+    const prevDisplay = process.env.DISPLAY;
+    const prevWayland = process.env.WAYLAND_DISPLAY;
+    const prevEditor = process.env.EDITOR;
+    const prevVisual = process.env.VISUAL;
+    delete process.env.DISPLAY;
+    delete process.env.WAYLAND_DISPLAY;
+    delete process.env.EDITOR;
+    delete process.env.VISUAL;
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/open`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: task.id }),
+      });
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as {
+        path: string;
+        opened: boolean;
+        via: string;
+      };
+      assert.ok(body.path.endsWith(`${task.id}.md`));
+      if (process.platform === 'linux') {
+        assert.equal(body.opened, false);
+        assert.equal(body.via, 'none');
+      }
+    } finally {
+      if (prevDisplay !== undefined) process.env.DISPLAY = prevDisplay;
+      else delete process.env.DISPLAY;
+      if (prevWayland !== undefined) process.env.WAYLAND_DISPLAY = prevWayland;
+      else delete process.env.WAYLAND_DISPLAY;
+      if (prevEditor !== undefined) process.env.EDITOR = prevEditor;
+      else delete process.env.EDITOR;
+      if (prevVisual !== undefined) process.env.VISUAL = prevVisual;
+      else delete process.env.VISUAL;
+    }
   });
 });

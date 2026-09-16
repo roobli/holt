@@ -10,6 +10,7 @@ import {
   listTasks,
   moveTask,
   openTaskBody,
+  canUsePlatformOpener,
   pushTask,
   readHistory,
   reorderToIndex,
@@ -217,4 +218,43 @@ test('inspectLedgerDetailed reports counts', async () => {
   assert.equal(info.ready, true);
   assert.equal(info.task_count, 1);
   assert.equal(info.history_exists, true);
+});
+
+
+test('canUsePlatformOpener respects DISPLAY on linux', () => {
+  assert.equal(canUsePlatformOpener({ DISPLAY: ':0' }, 'linux'), true);
+  assert.equal(canUsePlatformOpener({ WAYLAND_DISPLAY: 'wayland-0' }, 'linux'), true);
+  assert.equal(canUsePlatformOpener({}, 'linux'), false);
+  assert.equal(canUsePlatformOpener({}, 'darwin'), true);
+});
+
+test('openTaskBody headless no-op without editor', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'holt-open-hl-'));
+  await ensureLedger(root);
+  const a = await pushTask(root, { title: 'Headless', lane: 'work', actor: 'test' });
+  const prevDisplay = process.env.DISPLAY;
+  const prevWayland = process.env.WAYLAND_DISPLAY;
+  const prevEditor = process.env.EDITOR;
+  const prevVisual = process.env.VISUAL;
+  delete process.env.DISPLAY;
+  delete process.env.WAYLAND_DISPLAY;
+  delete process.env.EDITOR;
+  delete process.env.VISUAL;
+  try {
+    const result = await openTaskBody(root, a.id);
+    assert.ok(result.path.endsWith(`${a.id}.md`));
+    if (process.platform === 'linux') {
+      assert.equal(result.opened, false);
+      assert.equal(result.via, 'none');
+    }
+  } finally {
+    if (prevDisplay !== undefined) process.env.DISPLAY = prevDisplay;
+    else delete process.env.DISPLAY;
+    if (prevWayland !== undefined) process.env.WAYLAND_DISPLAY = prevWayland;
+    else delete process.env.WAYLAND_DISPLAY;
+    if (prevEditor !== undefined) process.env.EDITOR = prevEditor;
+    else delete process.env.EDITOR;
+    if (prevVisual !== undefined) process.env.VISUAL = prevVisual;
+    else delete process.env.VISUAL;
+  }
 });

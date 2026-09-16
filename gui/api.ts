@@ -4,7 +4,6 @@
  */
 import { watch, type FSWatcher } from 'node:fs';
 import { resolve } from 'node:path';
-import { spawn } from 'node:child_process';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   completeProject,
@@ -18,6 +17,7 @@ import {
   updateTask,
   inspectLedger,
   ensureLedger,
+  openTaskBody,
   type UpdateTaskPatch,
 } from '../src/commands.ts';
 import { saveGuiConfig } from './config.ts';
@@ -28,7 +28,8 @@ const WATCH_DEBOUNCE_MS = 120;
 export interface GuiApiState {
   /** Absolute ledger root */
   ledgerRoot: string;
-  watcher: FSWatcher | null;
+  /** Non-recursive watches: tasks/ + history.ndjson + root safety net */
+  watchers: FSWatcher[];
   sseClients: Set<ServerResponse>;
   watchTimer: ReturnType<typeof setTimeout> | null;
   watchGen: number;
@@ -37,19 +38,34 @@ export interface GuiApiState {
 export function createApiState(defaultLedger: string): GuiApiState {
   return {
     ledgerRoot: resolve(defaultLedger),
-    watcher: null,
+    watchers: [],
     sseClients: new Set(),
     watchTimer: null,
     watchGen: 0,
   };
 }
 
-function shouldIgnoreWatchName(name: string | null): boolean {
+/** Exported for unit tests — ignore lock/tmp/dotfiles; basename-aware. */
+export function shouldIgnoreWatchName(name: string | null): boolean {
   if (!name) return false;
-  if (name === '.holt.lock') return true;
-  if (name.endsWith('.tmp')) return true;
-  if (name.startsWith('.')) return true;
+  const base = name.includes('/') || name.includes('\\')
+    ? name.split(/[/\\]/).pop() ?? name
+    : name;
+  if (base === '.holt.lock') return true;
+  if (base.endsWith('.tmp')) return true;
+  if (base.startsWith('.')) return true;
   return false;
+}
+
+function closeWatchers(state: GuiApiState): void {
+  for (const w of state.watchers) {
+    try {
+      w.close();
+    } catch {
+      /* already closed */
+    }
+  }
+  state.watchers = [];
 }
 
 function broadcastLedgerChange(state: GuiApiState): void {
@@ -71,10 +87,37 @@ function scheduleBroadcast(state: GuiApiState): void {
   }, WATCH_DEBOUNCE_MS);
 }
 
-/** Start or restart fs.watch on current ledger root. */
+function attachWatch(
+  state: GuiApiState,
+  target: string,
+  onChange: (filename: string | null) => void,
+): void {
+  try {
+    const w = watch(target, (_event, filename) => {
+      // Directory watches: atomic .tmp → final name arrives as basename.
+      if (shouldIgnoreWatchName(filename)) return;
+      onChange(filename);
+    });
+    w.on('error', () => {
+      /* path may vanish mid-session */
+    });
+    state.watchers.push(w);
+  } catch {
+    /* path not watchable yet */
+  }
+}
+
+/**
+ * Start or restart ledger watches.
+ * Prefer concrete `tasks/` + `history.ndjson` (non-recursive) — recursive
+ * root watch misses events on some Linux setups; root is a thin safety net.
+ */
 export function restartLedgerWatch(state: GuiApiState): void {
-  state.watcher?.close();
-  state.watcher = null;
+  closeWatchers(state);
+  if (state.watchTimer) {
+    clearTimeout(state.watchTimer);
+    state.watchTimer = null;
+  }
   state.watchGen += 1;
   const gen = state.watchGen;
   const root = state.ledgerRoot;
@@ -82,18 +125,41 @@ export function restartLedgerWatch(state: GuiApiState): void {
   void inspectLedger(root).then((status) => {
     if (gen !== state.watchGen) return;
     if (!status.exists) return;
-    try {
-      state.watcher = watch(root, { recursive: true }, (_event, filename) => {
-        if (shouldIgnoreWatchName(filename)) return;
-        scheduleBroadcast(state);
-      });
-      state.watcher.on('error', () => {
-        /* ledger may vanish mid-session */
-      });
-    } catch {
-      /* path not watchable yet */
+
+    const onChange = (_filename: string | null) => {
+      scheduleBroadcast(state);
+    };
+
+    if (status.ready) {
+      attachWatch(state, status.tasksDir, onChange);
+      attachWatch(state, status.historyPath, onChange);
+    }
+    // Root non-recursive: history create, tasks/ create, top-level renames.
+    attachWatch(state, root, onChange);
+
+    // Last resort if nothing attached (exotic FS): recursive root.
+    if (state.watchers.length === 0) {
+      try {
+        const w = watch(root, { recursive: true }, (_event, filename) => {
+          if (shouldIgnoreWatchName(filename)) return;
+          scheduleBroadcast(state);
+        });
+        w.on('error', () => {});
+        state.watchers.push(w);
+      } catch {
+        /* */
+      }
     }
   });
+}
+
+/** Test helper: stop watchers without bumping gen. */
+export function stopLedgerWatch(state: GuiApiState): void {
+  closeWatchers(state);
+  if (state.watchTimer) {
+    clearTimeout(state.watchTimer);
+    state.watchTimer = null;
+  }
 }
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
@@ -120,17 +186,6 @@ function sendError(res: ServerResponse, err: unknown, fallback = 400): void {
   if (message.startsWith('unknown task') || message.includes('ENOENT')) status = 404;
   if (message.startsWith('ledger busy')) status = 409;
   sendJson(res, status, { error: message });
-}
-
-function openLocalPath(path: string): void {
-  const platform = process.platform;
-  if (platform === 'darwin') {
-    spawn('open', [path], { detached: true, stdio: 'ignore' }).unref();
-  } else if (platform === 'win32') {
-    spawn('cmd', ['/c', 'start', '', path], { detached: true, stdio: 'ignore' }).unref();
-  } else {
-    spawn('xdg-open', [path], { detached: true, stdio: 'ignore' }).unref();
-  }
 }
 
 async function applyLedgerPath(
@@ -184,7 +239,7 @@ export async function handleApi(
       const status = await inspectLedger(state.ledgerRoot);
       sendJson(res, 200, {
         ...status,
-        watching: state.watcher != null,
+        watching: state.watchers.length > 0,
         clients: state.sseClients.size,
       });
       return true;
@@ -359,13 +414,13 @@ export async function handleApi(
         sendJson(res, 400, { error: 'id required' });
         return true;
       }
-      const { path: filePath } = await readTaskFile(state.ledgerRoot, body.id);
-      try {
-        openLocalPath(filePath);
-      } catch {
-        /* ignore spawn errors — path still returned */
-      }
-      sendJson(res, 200, { path: filePath, opened: true });
+      // Shared with CLI open-body (honest opened/via; headless no-op).
+      const result = await openTaskBody(state.ledgerRoot, body.id, { wait: false });
+      sendJson(res, 200, {
+        path: result.path,
+        opened: result.opened,
+        via: result.via,
+      });
       return true;
     }
 

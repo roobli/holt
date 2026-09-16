@@ -57,7 +57,7 @@ pnpm gui:dev            # http://127.0.0.1:5174 · arg → $HOLT_LEDGER → last
 pnpm gui:dev /path/to/ledger
 ```
 
-Push / reorder / history in the GUI update the same files the CLI reads (and vice versa). **GUI auto-refreshes** when CLI or an editor changes ledger files (`fs.watch` → SSE). Path bar can validate / **创建** an empty ledger (`tasks/` + `history.ndjson`); last path is stored in `~/.config/holt/config.json` (shared with CLI; legacy `gui.json` still read). See [docs/ledger-resolution.md](docs/ledger-resolution.md).
+Push / reorder / history in the GUI update the same files the CLI reads (and vice versa). **GUI auto-refreshes** when CLI or an editor changes ledger files (`fs.watch` → SSE). Path bar can validate / **创建** an empty ledger (`tasks/` + `history.ndjson`); last path is stored in `~/.config/holt/config.json` (shared with CLI; legacy `gui.json` still read). See [docs/ledger-resolution.md](docs/ledger-resolution.md). The repo `sample/` ledger is a **clean seed** (see `sample/README.md`); use temp dirs for smoke tests.
 
 Details: [gui/README.md](gui/README.md).
 

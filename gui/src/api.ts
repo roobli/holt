@@ -108,7 +108,7 @@ export function fetchHistory(taskId?: string) {
 }
 
 export function openTaskFile(id: string) {
-  return req<{ path: string; opened: boolean }>('/api/open', {
+  return req<{ path: string; opened: boolean; via?: string }>('/api/open', {
     method: 'POST',
     body: JSON.stringify({ id }),
   });

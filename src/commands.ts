@@ -342,9 +342,20 @@ export interface OpenTaskBodyOptions {
   wait?: boolean;
 }
 
+/** True when a platform file opener is likely to do something visible. */
+export function canUsePlatformOpener(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (platform === 'darwin' || platform === 'win32') return true;
+  // Linux/BSD: xdg-open needs a session display; headless boxes no-op.
+  return Boolean(env.DISPLAY || env.WAYLAND_DISPLAY);
+}
+
 /**
  * Resolve task md path and open with $EDITOR / xdg-open / open
  * (same spirit as GUI CTA「在本机打开正文」).
+ * Headless (no DISPLAY/WAYLAND and no editor): returns opened=false, via=none.
  */
 export async function openTaskBody(
   root: string,
@@ -369,6 +380,10 @@ export async function openTaskBody(
     return { path, opened: true, via: 'editor' };
   }
 
+  if (!canUsePlatformOpener()) {
+    return { path, opened: false, via: 'none' };
+  }
+
   const platform = process.platform;
   try {
     if (platform === 'darwin') {
@@ -383,6 +398,7 @@ export async function openTaskBody(
     return { path, opened: false, via: 'none' };
   }
 }
+
 
 /** Enriched inspect for CLI / scripts (does not mutate). */
 export async function inspectLedgerDetailed(root: string): Promise<{

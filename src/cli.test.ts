@@ -199,3 +199,23 @@ test('cli does not update lastLedger when using env-only resolve', async () => {
   const tasks = JSON.parse(back.stdout) as Array<{ title: string }>;
   assert.equal(tasks[0]?.title, 'stay-A');
 });
+
+test('cli open-body headless warns on stderr but prints path', async () => {
+  const ledger = await mkdtemp(join(tmpdir(), 'holt-cli-open-hl-'));
+  holt(['ensure-ledger', ledger]);
+  const a = await pushTask(ledger, { title: 'Body', lane: 'work', actor: 'test' });
+  const res = holt(['open-body', ledger, a.id], {
+    env: {
+      ...process.env,
+      DISPLAY: '',
+      WAYLAND_DISPLAY: '',
+      EDITOR: '',
+      VISUAL: '',
+    },
+  });
+  assert.equal(res.status, 0, res.stderr);
+  assert.ok(res.stdout.trim().endsWith(`${a.id}.md`), res.stdout);
+  if (process.platform === 'linux') {
+    assert.match(res.stderr, /no opener/i);
+  }
+});

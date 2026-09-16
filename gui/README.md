@@ -18,7 +18,7 @@ The process serves Vite UI + `/api/*` that reads/writes `tasks/*.md` and `histor
 
 ### Auto-refresh
 
-`fs.watch` on the ledger directory (debounced) pushes SSE events on `/api/watch`. The UI refreshes when CLI or an external editor changes task files / `history.ndjson` — no manual 刷新 required (button remains as fallback).
+`fs.watch` on **`tasks/` + `history.ndjson`** (non-recursive, plus a thin root safety net; debounced) pushes SSE on `/api/watch`. More reliable than recursive root watch on some Linux setups. The UI refreshes when CLI or an external editor changes ledger files — no manual 刷新 required (button remains as fallback).
 
 ### Path bar
 
@@ -50,7 +50,7 @@ Both surfaces call `listTasks` / `pushTask` / `reorderTask` / `readHistory` (plu
 - list / push top|bottom / reorder (drag + ↑↓) / select + history
 - Live refresh when ledger files change
 - status & lane updates → task file + history
-- CTA「在本机打开正文 / Noto」→ `xdg-open` / `open` on the task `.md` (may no-op in headless boxes; path shown in toast)
+- CTA「在本机打开正文 / Noto」→ same as CLI `open-body` (`$EDITOR` / `xdg-open` / `open`). Headless / no display: `opened=false`, toast shows path + 未打开
 
 ## Stubbed / not this package
 

@@ -713,6 +713,12 @@ body {
   gap: 3px;
 }
 
+
+.push-dialog input.is-invalid {
+  border-color: #b54a4a;
+  outline: 1px solid rgba(181, 74, 74, 0.35);
+}
+
 .push-dialog input,
 .push-dialog select {
   font: inherit;

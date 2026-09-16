@@ -351,6 +351,11 @@ async function cmdOpenBody(
   const editor = flagStr(flags, 'editor');
   const result = await openTaskBody(ledger, id, { editor });
   console.log(result.path);
+  if (!result.opened) {
+    console.error(
+      'open-body: no opener (set $EDITOR / --editor, or run with a display); path printed above',
+    );
+  }
 }
 
 async function cmdEnsureLedger(pathArg: string | undefined): Promise<void> {

@@ -524,7 +524,13 @@ app.addEventListener('click', (e) => {
       const estimate = dialog.querySelector<HTMLInputElement>('input[name="estimate"]')?.value.trim();
       const project = dialog.querySelector<HTMLInputElement>('input[name="project"]')?.value.trim();
       if (!title || !lane) {
-        showToast('需要 title 与 lane');
+        const titleInput = dialog.querySelector<HTMLInputElement>('input[name="title"]');
+        if (!title && titleInput) {
+          titleInput.classList.add('is-invalid');
+          titleInput.setAttribute('aria-invalid', 'true');
+          titleInput.focus();
+        }
+        showToast(title ? '需要 lane' : '标题不能为空');
         return;
       }
       try {
@@ -672,8 +678,12 @@ app.addEventListener('click', (e) => {
     }
     void (async () => {
       try {
-        const { path } = await openTaskFile(task.id);
-        showToast(`打开 ${path}`);
+        const { path, opened } = await openTaskFile(task.id);
+        showToast(
+          opened
+            ? `打开 ${path}`
+            : `未打开（无 DISPLAY / 编辑器）· ${path}`,
+        );
       } catch (err) {
         showToast(err instanceof Error ? err.message : String(err));
       }
@@ -711,6 +721,14 @@ app.addEventListener('click', (e) => {
         render();
       }
     })();
+  }
+});
+
+app.addEventListener('input', (e) => {
+  const el = e.target as HTMLInputElement;
+  if (el?.name === 'title' && el.classList.contains('is-invalid')) {
+    el.classList.remove('is-invalid');
+    el.removeAttribute('aria-invalid');
   }
 });
 
