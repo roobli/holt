@@ -1,6 +1,6 @@
 import type { DemoTask, HistoryEntry, HoltStatus, LaneFilter, LaneId, ViewId } from './types';
 
-const STORAGE_KEY = 'holt-demo-v1';
+const STORAGE_KEY = 'holt-demo-v1.2';
 
 export interface AppState {
   tasks: DemoTask[];
@@ -198,7 +198,25 @@ export function moveTask(id: string, dir: 'up' | 'down'): void {
   const to = b.stack_order;
   a.stack_order = to;
   b.stack_order = from;
-  appendHistory(a, `reorder ${from} → ${to}`);
+  appendHistory(a, `reorder ${from}→${to}`);
+  state = { ...state, tasks: [...state.tasks] };
+  emit();
+}
+
+/** Move task to a new index among the full stack (drag primary). */
+export function reorderTaskTo(id: string, toIndex: number): void {
+  const ordered = sortedTasks('all');
+  const fromIndex = ordered.findIndex((t) => t.id === id);
+  if (fromIndex < 0) return;
+  const clamped = Math.max(0, Math.min(ordered.length - 1, toIndex));
+  if (fromIndex === clamped) return;
+  const from = ordered[fromIndex].stack_order;
+  const [item] = ordered.splice(fromIndex, 1);
+  ordered.splice(clamped, 0, item);
+  ordered.forEach((t, i) => {
+    t.stack_order = (i + 1) * 10;
+  });
+  appendHistory(item, `reorder ${from}→${item.stack_order}`);
   state = { ...state, tasks: [...state.tasks] };
   emit();
 }
@@ -240,13 +258,13 @@ export function clearAll(): void {
 }
 
 export function seedDemoStack(): void {
-  // Match visual baseline sample titles (for optional "fill demo" — empty by default)
+  // Mixed lanes so rail lane filter is demonstrable; clean history labels/times.
   const seed: Omit<DemoTask, 'history' | 'created_at' | 'updated_at'>[] = [
     { id: 'T-0001', title: '写立项摘要', status: 'doing', lane: 'work', stack_order: 10, estimate_min: 45, hooks: { pre: ['lint'], post: ['notify'] } },
-    { id: 'T-0002', title: '定正式名', status: 'open', lane: 'work', stack_order: 20, estimate_min: 20 },
-    { id: 'T-0003', title: '竞品补漏扫完', status: 'open', lane: 'work', stack_order: 30, estimate_min: 90 },
+    { id: 'T-0002', title: '定正式名', status: 'open', lane: 'personal', stack_order: 20, estimate_min: 20 },
+    { id: 'T-0003', title: '竞品补漏扫完', status: 'open', lane: 'openjobs', stack_order: 30, estimate_min: 90 },
     { id: 'T-0004', title: 'hook 语义拍板', status: 'open', lane: 'work', stack_order: 40, estimate_min: 15 },
-    { id: 'T-0005', title: '开独立仓脚手架', status: 'open', lane: 'work', stack_order: 50, estimate_min: 60 },
+    { id: 'T-0005', title: '开独立仓脚手架', status: 'open', lane: 'personal', stack_order: 50, estimate_min: 60 },
   ];
   const iso = nowIso();
   const tasks: DemoTask[] = seed.map((s, i) => ({
@@ -256,11 +274,11 @@ export function seedDemoStack(): void {
     history:
       i === 0
         ? [
-            { time: '12:06', label: 'status → doing' },
-            { time: '12:05', label: 'reorder 10 → 3' },
-            { time: '12:00', label: 'create' },
+            { time: '09:42', label: 'status → doing' },
+            { time: '09:38', label: 'reorder 20 → 10' },
+            { time: '09:15', label: 'create' },
           ]
-        : [{ time: '12:00', label: 'create' }],
+        : [{ time: '09:15', label: 'create' }],
   }));
   state = {
     tasks,

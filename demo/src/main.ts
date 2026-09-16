@@ -5,6 +5,7 @@ import {
   getState,
   moveTask,
   pushTask,
+  reorderTaskTo,
   seedDemoStack,
   selectTask,
   selectedTask,
@@ -61,7 +62,7 @@ function renderCard(task: DemoTask, selected: boolean, index: number, total: num
       : '';
 
   return `
-    <div class="stack-card${selected ? ' is-selected' : ''}" style="min-height:${h}px" data-id="${task.id}" role="button" tabindex="0" aria-pressed="${selected}">
+    <div class="stack-card${selected ? ' is-selected' : ''}" style="min-height:${h}px" data-id="${task.id}" draggable="true" role="button" tabindex="0" aria-pressed="${selected}">
       <div class="stack-card-body">
         <div class="stack-card-title">${escapeHtml(task.title)}</div>
         ${meta}
@@ -129,7 +130,7 @@ function renderDetail(task: DemoTask | null): string {
         <div class="value">${escapeHtml(hooksText)}</div>
       </div>
     </div>
-    <button type="button" class="noto-btn" data-noto>在 Noto 打开正文</button>
+    <button type="button" class="noto-btn" data-noto>在本机打开正文 / Noto</button>
     <div class="history-label">Recent history</div>
     <ul class="history-list">${history || '<li><span class="t">—</span><span>暂无</span></li>'}</ul>
   `;
@@ -193,7 +194,7 @@ function render(): void {
       <main class="main">
         <header class="main-header">
           <h1>Stack</h1>
-          <p class="main-sub">优先序 · ↑↓ reorder</p>
+          <p class="main-sub">优先序 · 拖拽为主 · ↑↓ 悬停/键盘</p>
         </header>
         <button type="button" class="push-btn" data-push="top">+ 压入栈顶</button>
         ${stackBody}
@@ -249,7 +250,7 @@ app.addEventListener('click', (e) => {
     const task = selectedTask();
     showToast(
       task
-        ? `stub：将在 Noto 打开 ${task.id}.md（demo 未接文件）`
+        ? `stub：本机打开 ${task.id}.md / Noto（demo 未接文件）`
         : 'stub：未选中任务',
     );
     return;
@@ -282,7 +283,54 @@ app.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' ') {
     e.preventDefault();
     selectTask(card.dataset.id);
+    return;
   }
+  // Keyboard reorder (arrows primary when focused; hover buttons are secondary)
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    moveTask(card.dataset.id, e.key === 'ArrowUp' ? 'up' : 'down');
+  }
+});
+
+let dragId: string | null = null;
+
+app.addEventListener('dragstart', (e) => {
+  const card = (e.target as HTMLElement).closest<HTMLElement>('.stack-card[data-id]');
+  if (!card?.dataset.id) return;
+  if ((e.target as HTMLElement).closest('[data-actions]')) {
+    e.preventDefault();
+    return;
+  }
+  dragId = card.dataset.id;
+  card.classList.add('is-dragging');
+  e.dataTransfer?.setData('text/plain', dragId);
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+});
+
+app.addEventListener('dragend', () => {
+  dragId = null;
+  app.querySelectorAll('.stack-card.is-dragging, .stack-card.is-drop-target').forEach((el) => {
+    el.classList.remove('is-dragging', 'is-drop-target');
+  });
+});
+
+app.addEventListener('dragover', (e) => {
+  const card = (e.target as HTMLElement).closest<HTMLElement>('.stack-card[data-id]');
+  if (!card || !dragId) return;
+  e.preventDefault();
+  app.querySelectorAll('.stack-card.is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
+  if (card.dataset.id !== dragId) card.classList.add('is-drop-target');
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+});
+
+app.addEventListener('drop', (e) => {
+  const card = (e.target as HTMLElement).closest<HTMLElement>('.stack-card[data-id]');
+  if (!card?.dataset.id || !dragId) return;
+  e.preventDefault();
+  const ordered = sortedTasks('all');
+  const toIndex = ordered.findIndex((t) => t.id === card.dataset.id);
+  if (toIndex >= 0) reorderTaskTo(dragId, toIndex);
+  dragId = null;
 });
 
 subscribe(render);

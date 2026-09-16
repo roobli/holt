@@ -250,8 +250,9 @@ body {
 }
 
 .stack-card.is-selected {
-  border-width: 2px;
+  border-width: 1px;
   border-color: var(--select-ring);
+  box-shadow: 0 0 0 1px var(--select-ring);
 }
 
 .stack-card-body {
@@ -287,8 +288,26 @@ body {
 .stack-card-actions {
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--line);
+  border-left: 1px solid transparent;
   flex-shrink: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, border-color 0.12s ease;
+}
+
+.stack-card:hover .stack-card-actions,
+.stack-card:focus-within .stack-card-actions {
+  opacity: 1;
+  pointer-events: auto;
+  border-left-color: var(--line);
+}
+
+@media (hover: none) {
+  .stack-card-actions {
+    opacity: 1;
+    pointer-events: auto;
+    border-left-color: var(--line);
+  }
 }
 
 .stack-card-actions button {
@@ -503,4 +522,21 @@ body {
   .detail-panel {
     min-height: auto;
   }
+}
+
+.stack-card.is-dragging {
+  opacity: 0.55;
+}
+
+.stack-card.is-drop-target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.stack-card[draggable='true'] {
+  cursor: grab;
+}
+
+.stack-card[draggable='true']:active {
+  cursor: grabbing;
 }

@@ -27,16 +27,16 @@ Output: `demo/dist/`.
 - Push to top / push to bottom
 - Select card → detail panel (status/lane editable; estimate & hooks read-only)
 - Lane filter (All / personal / work / openjobs)
-- Reorder via ↑ / ↓ on each card
+- Reorder via drag (primary); ↑ / ↓ on hover or keyboard arrows when focused
 - Block height from `estimate_min`, capped 48–120px
 - Brand: **holt**
 
 ## Stubbed
 
 - Timeline view (disabled)
-- “在 Noto 打开正文” (toast only)
+- “在本机打开正文 / Noto” (toast only)
 - No real ledger / history.ndjson I/O
-- Drag-and-drop reorder (buttons only for v1)
+- File-backed ledger I/O (see root CLI)
 
 ## GitHub Pages
 
