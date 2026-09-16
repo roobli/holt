@@ -8,7 +8,23 @@ Personal **task stack** companion: ordered vertical stack first, optional gantt 
 
 ## Status
 
-Scaffold. UI follows Stack primary visual baseline (v1.1). Timeline (gantt) is secondary and deferred.
+Scaffold + **clickable Stack v1.1 demo**. Timeline (gantt) is secondary and deferred.
+
+## Stack demo
+
+```sh
+pnpm install
+pnpm demo:dev
+```
+
+- Empty stack → push top/bottom → select updates detail
+- Lanes filter in-memory; reorder via ↑/↓
+- Brand **holt**; paper/ink layout aligned to visual baseline v1.1
+- Details: [demo/README.md](demo/README.md)
+
+Build: `pnpm demo:build` → `demo/dist/`.
+
+Live URL (GitHub Pages, if enabled): https://roobli.github.io/holt/
 
 ## Ledger layout
 
@@ -26,6 +42,7 @@ See [docs/file-model.md](docs/file-model.md).
 ```sh
 pnpm install
 pnpm test
+pnpm typecheck
 ```
 
 ## License
