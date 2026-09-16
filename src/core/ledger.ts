@@ -1,6 +1,7 @@
 import { access, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { appendEvent, readEvents } from './history.ts';
+import { applyEstimateDualWrite } from './estimate.ts';
 import { formatTaskMarkdown, nextTaskId } from './format-task.ts';
 import { parseTaskMarkdown, stackSort } from './parse-task.ts';
 import { withLedgerLock } from './lock.ts';
@@ -123,7 +124,12 @@ export async function writeTaskFile(
 export interface PushOptions {
   title: string;
   lane: string;
+  /** Preferred: duration with unit (45m / 2h / 1d). Dual-writes estimate_min. */
+  estimate?: string;
+  /** Legacy minutes; used when estimate string not provided. */
   estimate_min?: number;
+  project?: string;
+  blocked_by?: string[];
   where?: 'top' | 'bottom';
   status?: HoltStatus;
   actor?: string;
@@ -154,10 +160,22 @@ export async function pushTask(
       status: opts.status ?? 'open',
       lane: opts.lane,
       stack_order,
-      estimate_min: opts.estimate_min,
       created_at: now,
       updated_at: now,
     };
+    if (opts.estimate != null && opts.estimate.trim() !== '') {
+      applyEstimateDualWrite(meta, opts.estimate);
+    } else if (opts.estimate_min != null) {
+      meta.estimate_min = opts.estimate_min;
+    }
+    if (opts.project != null && opts.project.trim() !== '') {
+      meta.project = opts.project.trim();
+    }
+    if (opts.blocked_by != null && opts.blocked_by.length > 0) {
+      const known = new Set(existing.map((t) => t.id));
+      const cleaned = dedupeBlockedBy(opts.blocked_by, id, known);
+      if (cleaned.length) meta.blocked_by = cleaned;
+    }
     await writeTaskFile(root, meta, opts.body ?? '');
     await appendEvent(paths.historyPath, {
       time: now,
@@ -169,11 +187,58 @@ export async function pushTask(
         stack_order: meta.stack_order,
         lane: meta.lane,
         status: meta.status,
+        ...(meta.estimate != null ? { estimate: meta.estimate } : {}),
         ...(meta.estimate_min != null ? { estimate_min: meta.estimate_min } : {}),
+        ...(meta.project != null ? { project: meta.project } : {}),
+        ...(meta.blocked_by != null ? { blocked_by: meta.blocked_by } : {}),
       },
     });
     return meta;
   });
+}
+
+/** Dedupe blocked_by; reject self and unknown ids. */
+export function dedupeBlockedBy(
+  ids: readonly string[],
+  selfId: string,
+  knownIds: ReadonlySet<string>,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of ids) {
+    const id = String(raw).trim();
+    if (!id) continue;
+    if (id === selfId) {
+      throw new Error(`不能依赖自身: ${selfId}`);
+    }
+    if (!knownIds.has(id)) {
+      throw new Error(`未知任务 id: ${id}`);
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+/** Blockers still open/doing (optionally treating some ids as becoming done). */
+export function openBlockersOf(
+  task: HoltTaskMeta,
+  all: readonly HoltTaskMeta[],
+  treatAsDone?: ReadonlySet<string>,
+): string[] {
+  const byId = new Map(all.map((t) => [t.id, t]));
+  const blockers = task.blocked_by ?? [];
+  return blockers.filter((bid) => {
+    if (treatAsDone?.has(bid)) return false;
+    const b = byId.get(bid);
+    if (!b) return true; // missing edge → treat as blocking
+    return b.status === 'open' || b.status === 'doing';
+  });
+}
+
+export function formatBlockedDoneError(openBlockers: readonly string[]): string {
+  return `无法标完成：仍被 ${openBlockers.join('、')} 阻塞`;
 }
 
 export async function reorderTask(

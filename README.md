@@ -24,7 +24,12 @@ CLI and local GUI both use `src/commands.ts` (`listTasks`, `pushTask`, `reorderT
 pnpm install
 # from repo root; default ledger is ./sample
 pnpm holt list
-pnpm holt push --title "Ship CLI" --lane work --estimate 45 --top
+pnpm holt list --project holt-mvp
+pnpm holt push --title "Ship CLI" --lane work --estimate 2h --project holt-mvp --top
+pnpm holt update T-0002 --blocked-by T-0001 --estimate 1d
+pnpm holt update T-0002 --add-blocked-by T-0003
+pnpm holt update T-0001 --status done
+pnpm holt complete-project holt-mvp
 pnpm holt reorder T-0001 --to 10
 pnpm holt history --task T-0001
 
@@ -32,6 +37,7 @@ pnpm holt history --task T-0001
 pnpm link --global   # optional
 holt list ./sample
 ```
+Estimate accepts `45m` / `2h` / `1d` (1d = 8h) or a bare minute number. Soft table headers stay four columns (no deps/project columns).
 
 Commands operate on a ledger directory:
 

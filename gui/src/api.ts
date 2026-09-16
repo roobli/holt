@@ -52,7 +52,9 @@ export function fetchTasks() {
 export function pushTask(input: {
   title: string;
   lane: string;
+  estimate?: string;
   estimate_min?: number;
+  project?: string;
   where: 'top' | 'bottom';
 }) {
   return req<{ task: HoltTaskMeta }>('/api/push', {
@@ -77,11 +79,26 @@ export function reorderToIndex(id: string, toIndex: number) {
 
 export function updateTask(
   id: string,
-  patch: { status?: HoltStatus; lane?: string },
+  patch: {
+    status?: HoltStatus;
+    lane?: string;
+    estimate?: string | null;
+    project?: string | null;
+    blocked_by?: string[] | null;
+    add_blocked_by?: string[];
+    rm_blocked_by?: string[];
+  },
 ) {
   return req<{ task: HoltTaskMeta }>('/api/update', {
     method: 'POST',
     body: JSON.stringify({ id, ...patch }),
+  });
+}
+
+export function completeProject(project: string) {
+  return req<{ project: string; task_ids: string[] }>('/api/complete-project', {
+    method: 'POST',
+    body: JSON.stringify({ project }),
   });
 }
 

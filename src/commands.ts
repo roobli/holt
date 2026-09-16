@@ -14,15 +14,28 @@ import {
   ensureLedger,
   ledgerPaths,
   inspectLedger,
+  dedupeBlockedBy,
+  openBlockersOf,
+  formatBlockedDoneError,
   type PushOptions,
   type LedgerPaths,
   type LedgerStatus,
 } from './core/ledger.ts';
+import { applyEstimateDualWrite, displayEstimate } from './core/estimate.ts';
 import { appendEvent } from './core/history.ts';
 import type { HoltEvent, HoltStatus, HoltTaskMeta } from './core/types.ts';
 
 export type { HoltEvent, HoltStatus, HoltTaskMeta, PushOptions, LedgerPaths, LedgerStatus };
-export { readTaskFile, writeTaskFile, ensureLedger, ledgerPaths, inspectLedger };
+export {
+  readTaskFile,
+  writeTaskFile,
+  ensureLedger,
+  ledgerPaths,
+  inspectLedger,
+  displayEstimate,
+  openBlockersOf,
+  formatBlockedDoneError,
+};
 
 export const listTasks = listLedgerTasks;
 export const readHistory = listHistory;
@@ -118,7 +131,22 @@ export interface UpdateTaskPatch {
   status?: HoltStatus;
   lane?: string;
   title?: string;
+  /** Duration with unit; dual-writes estimate_min. null clears both. */
+  estimate?: string | null;
+  /** Legacy; prefer estimate. null clears. Ignored if estimate is set. */
   estimate_min?: number | null;
+  /** Replace entire blocked_by list; null/[] clears. */
+  blocked_by?: string[] | null;
+  add_blocked_by?: string[];
+  rm_blocked_by?: string[];
+  /** Project slug; null or '' clears. */
+  project?: string | null;
+}
+
+function sameStringList(a: string[] | undefined, b: string[]): boolean {
+  const aa = a ?? [];
+  if (aa.length !== b.length) return false;
+  return aa.every((v, i) => v === b[i]);
 }
 
 export async function updateTask(
@@ -127,10 +155,17 @@ export async function updateTask(
   patch: UpdateTaskPatch,
   actor = 'cli',
 ): Promise<HoltTaskMeta> {
-  return mutateLedger(root, async ({ readTaskFile, writeTaskFile, ledgerPaths, appendEvent }) => {
+  return mutateLedger(root, async ({ readTaskFile, writeTaskFile, ledgerPaths, appendEvent, listLedgerTasks }) => {
     const { meta, body } = await readTaskFile(root, id);
+    const all = await listLedgerTasks(root);
+    const known = new Set(all.map((t) => t.id));
     const data: Record<string, unknown> = {};
+
     if (patch.status != null && patch.status !== meta.status) {
+      if (patch.status === 'done') {
+        const open = openBlockersOf(meta, all);
+        if (open.length) throw new Error(formatBlockedDoneError(open));
+      }
       meta.status = patch.status;
       data.status = patch.status;
     }
@@ -142,13 +177,68 @@ export async function updateTask(
       meta.title = patch.title;
       data.title = patch.title;
     }
-    if (patch.estimate_min !== undefined) {
+
+    if (patch.estimate !== undefined) {
+      if (patch.estimate === null || patch.estimate.trim() === '') {
+        if (meta.estimate != null || meta.estimate_min != null) {
+          delete meta.estimate;
+          delete meta.estimate_min;
+          data.estimate = null;
+          data.estimate_min = null;
+        }
+      } else {
+        const before = meta.estimate;
+        const beforeMin = meta.estimate_min;
+        applyEstimateDualWrite(meta, patch.estimate);
+        if (meta.estimate !== before || meta.estimate_min !== beforeMin) {
+          data.estimate = meta.estimate;
+          data.estimate_min = meta.estimate_min;
+        }
+      }
+    } else if (patch.estimate_min !== undefined) {
       const next = patch.estimate_min === null ? undefined : patch.estimate_min;
       if (next !== meta.estimate_min) {
         meta.estimate_min = next;
         data.estimate_min = next ?? null;
       }
     }
+
+    let nextBlocked = meta.blocked_by ? [...meta.blocked_by] : [];
+    let blockedTouched = false;
+    if (patch.blocked_by !== undefined) {
+      blockedTouched = true;
+      nextBlocked =
+        patch.blocked_by === null || patch.blocked_by.length === 0
+          ? []
+          : dedupeBlockedBy(patch.blocked_by, id, known);
+    }
+    if (patch.add_blocked_by?.length) {
+      blockedTouched = true;
+      nextBlocked = dedupeBlockedBy([...nextBlocked, ...patch.add_blocked_by], id, known);
+    }
+    if (patch.rm_blocked_by?.length) {
+      blockedTouched = true;
+      const rm = new Set(patch.rm_blocked_by.map((x) => x.trim()).filter(Boolean));
+      nextBlocked = nextBlocked.filter((x) => !rm.has(x));
+    }
+    if (blockedTouched && !sameStringList(meta.blocked_by, nextBlocked)) {
+      if (nextBlocked.length === 0) delete meta.blocked_by;
+      else meta.blocked_by = nextBlocked;
+      data.blocked_by = nextBlocked;
+    }
+
+    if (patch.project !== undefined) {
+      const next =
+        patch.project === null || patch.project.trim() === ''
+          ? undefined
+          : patch.project.trim();
+      if (next !== meta.project) {
+        if (next === undefined) delete meta.project;
+        else meta.project = next;
+        data.project = next ?? null;
+      }
+    }
+
     if (Object.keys(data).length === 0) return meta;
     const now = new Date().toISOString();
     meta.updated_at = now;
@@ -162,4 +252,80 @@ export async function updateTask(
     });
     return meta;
   });
+}
+
+export interface CompleteProjectResult {
+  project: string;
+  task_ids: string[];
+}
+
+/**
+ * Mark all open/doing tasks in a project as done (all-or-nothing).
+ * Co-completed tasks count as clearing blockers for the batch check.
+ */
+export async function completeProject(
+  root: string,
+  project: string,
+  actor = 'cli',
+): Promise<CompleteProjectResult> {
+  const slug = project.trim();
+  if (!slug) throw new Error('project slug required');
+
+  return mutateLedger(root, async ({ listLedgerTasks, readTaskFile, writeTaskFile, ledgerPaths, appendEvent }) => {
+    const all = await listLedgerTasks(root);
+    const targets = all.filter(
+      (t) => t.project === slug && (t.status === 'open' || t.status === 'doing'),
+    );
+    if (targets.length === 0) {
+      return { project: slug, task_ids: [] };
+    }
+
+    const batchIds = new Set(targets.map((t) => t.id));
+    const failures: string[] = [];
+    for (const t of targets) {
+      const open = openBlockersOf(t, all, batchIds);
+      if (open.length) {
+        failures.push(`${t.id} 仍被 ${open.join('、')} 阻塞`);
+      }
+    }
+    if (failures.length) {
+      throw new Error(`无法完成 project：${failures.join('；')}`);
+    }
+
+    const now = new Date().toISOString();
+    const task_ids = targets.map((t) => t.id);
+    await appendEvent(ledgerPaths(root).historyPath, {
+      time: now,
+      event: 'project_completed',
+      task_id: '*',
+      actor,
+      data: { project: slug, task_ids },
+    });
+
+    for (const t of targets) {
+      const { meta, body } = await readTaskFile(root, t.id);
+      if (meta.status === 'done') continue;
+      meta.status = 'done';
+      meta.updated_at = now;
+      await writeTaskFile(root, meta, body);
+      await appendEvent(ledgerPaths(root).historyPath, {
+        time: now,
+        event: 'updated',
+        task_id: t.id,
+        actor,
+        data: { status: 'done', via: 'project_completed', project: slug },
+      });
+    }
+
+    return { project: slug, task_ids };
+  });
+}
+
+/** Filter helper used by CLI list --project. */
+export function filterTasksByProject(
+  tasks: readonly HoltTaskMeta[],
+  project: string | undefined,
+): HoltTaskMeta[] {
+  if (project == null || project === '') return [...tasks];
+  return tasks.filter((t) => t.project === project);
 }

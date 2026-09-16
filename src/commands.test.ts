@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import {
+  completeProject,
   listTasks,
   moveTask,
   pushTask,
@@ -43,4 +44,123 @@ test('commands: push move reorderToIndex update history', async () => {
   const hist = await readHistory(root, tasks[0]!.id);
   assert.ok(hist.some((e) => e.event === 'updated' && e.actor === 'test'));
   assert.ok(hist.every((e) => e.task_id === tasks[0]!.id));
+});
+
+test('estimate dual-write on push/update', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'holt-est-'));
+  const a = await pushTask(root, {
+    title: 'Est',
+    lane: 'work',
+    estimate: '2h',
+    actor: 'test',
+  });
+  assert.equal(a.estimate, '2h');
+  assert.equal(a.estimate_min, 120);
+  const raw = await readFile(join(root, 'tasks', a.id + '.md'), 'utf8');
+  assert.match(raw, /estimate: 2h/);
+  assert.match(raw, /estimate_min: 120/);
+
+  const updated = await updateTask(root, a.id, { estimate: '1d' }, 'test');
+  assert.equal(updated.estimate, '1d');
+  assert.equal(updated.estimate_min, 480);
+});
+
+test('blocked_by done guard refuses open blockers', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'holt-dep-'));
+  const a = await pushTask(root, { title: 'Blocker', lane: 'work', actor: 'test' });
+  const b = await pushTask(root, {
+    title: 'Blocked',
+    lane: 'work',
+    blocked_by: [a.id],
+    actor: 'test',
+  });
+  await assert.rejects(
+    () => updateTask(root, b.id, { status: 'done' }, 'test'),
+    /无法标完成/,
+  );
+  await updateTask(root, a.id, { status: 'done' }, 'test');
+  const ok = await updateTask(root, b.id, { status: 'done' }, 'test');
+  assert.equal(ok.status, 'done');
+});
+
+test('blocked_by rejects unknown and self', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'holt-dep2-'));
+  const a = await pushTask(root, { title: 'A', lane: 'work', actor: 'test' });
+  await assert.rejects(
+    () => updateTask(root, a.id, { blocked_by: ['T-9999'] }, 'test'),
+    /未知任务/,
+  );
+  await assert.rejects(
+    () => updateTask(root, a.id, { add_blocked_by: [a.id] }, 'test'),
+    /不能依赖自身/,
+  );
+});
+
+test('complete-project all-or-nothing + history summary', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'holt-proj-'));
+  const a = await pushTask(root, {
+    title: 'A',
+    lane: 'work',
+    project: 'holt-mvp',
+    actor: 'test',
+  });
+  const b = await pushTask(root, {
+    title: 'B',
+    lane: 'work',
+    project: 'holt-mvp',
+    blocked_by: [a.id],
+    actor: 'test',
+  });
+  await pushTask(root, {
+    title: 'Other',
+    lane: 'work',
+    project: 'other',
+    actor: 'test',
+  });
+
+  // External open blocker would fail; intra-batch blocker counts as cleared
+  const result = await completeProject(root, 'holt-mvp', 'test');
+  assert.deepEqual(result.task_ids.sort(), [a.id, b.id].sort());
+
+  const tasks = await listTasks(root);
+  assert.equal(tasks.find((t) => t.id === a.id)!.status, 'done');
+  assert.equal(tasks.find((t) => t.id === b.id)!.status, 'done');
+  assert.equal(tasks.find((t) => t.title === 'Other')!.status, 'open');
+
+  const hist = await readHistory(root);
+  assert.ok(
+    hist.some(
+      (e) =>
+        e.event === 'project_completed' &&
+        e.task_id === '*' &&
+        (e.data as { project?: string })?.project === 'holt-mvp',
+    ),
+  );
+  assert.ok(
+    hist.some(
+      (e) =>
+        e.event === 'updated' &&
+        e.task_id === a.id &&
+        (e.data as { via?: string })?.via === 'project_completed',
+    ),
+  );
+});
+
+test('complete-project fails whole batch on external open blocker', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'holt-proj2-'));
+  const ext = await pushTask(root, { title: 'Ext', lane: 'work', actor: 'test' });
+  const a = await pushTask(root, {
+    title: 'A',
+    lane: 'work',
+    project: 'p1',
+    blocked_by: [ext.id],
+    actor: 'test',
+  });
+  await assert.rejects(
+    () => completeProject(root, 'p1', 'test'),
+    /无法完成 project/,
+  );
+  const tasks = await listTasks(root);
+  assert.equal(tasks.find((t) => t.id === a.id)!.status, 'open');
+  assert.equal(tasks.find((t) => t.id === ext.id)!.status, 'open');
 });

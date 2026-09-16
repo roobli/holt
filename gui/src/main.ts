@@ -1,5 +1,6 @@
 import './styles.css';
 import {
+  completeProject as apiCompleteProject,
   fetchHistory,
   fetchTasks,
   getLedger,
@@ -11,7 +12,17 @@ import {
   subscribeLedgerWatch,
   updateTask,
 } from './api';
-import type { HoltEvent, HoltStatus, HoltTaskMeta, LaneFilter, LaneId } from './types';
+import {
+  displayEstimate,
+  estimateMinutesOf,
+  openBlockersOf,
+  type HoltEvent,
+  type HoltStatus,
+  type HoltTaskMeta,
+  type LaneFilter,
+  type LaneId,
+  type ProjectFilter,
+} from './types';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 
@@ -20,6 +31,7 @@ interface UiState {
   historyByTask: Record<string, HoltEvent[]>;
   selectedId: string | null;
   lane: LaneFilter;
+  project: ProjectFilter;
   ledgerRoot: string;
   ledgerExists: boolean;
   ledgerReady: boolean;
@@ -28,6 +40,7 @@ interface UiState {
   pushWhere: 'top' | 'bottom' | null;
   busy: boolean;
   detailCollapsed: boolean;
+  detailError: string | null;
 }
 
 const state: UiState = {
@@ -35,6 +48,7 @@ const state: UiState = {
   historyByTask: {},
   selectedId: null,
   lane: 'all',
+  project: 'all',
   ledgerRoot: '',
   ledgerExists: false,
   ledgerReady: false,
@@ -43,6 +57,7 @@ const state: UiState = {
   pushWhere: null,
   busy: false,
   detailCollapsed: true,
+  detailError: null,
 };
 
 let toastTimer: number | undefined;
@@ -69,7 +84,6 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-
 function friendlyError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   if (/ledger busy/i.test(raw) || /\.holt\.lock/i.test(raw)) {
@@ -81,7 +95,7 @@ function friendlyError(err: unknown): string {
   return raw;
 }
 
-/** Map estimate_min → block height 48–120px with ease-out curve. */
+/** Map estimate minutes → block height 48–120px with ease-out curve. */
 function estimateToHeight(estimateMin?: number): number {
   const MIN = 48;
   const MAX = 120;
@@ -91,9 +105,21 @@ function estimateToHeight(estimateMin?: number): number {
   return Math.round(MIN + (MAX - MIN) * eased);
 }
 
-function sortedTasks(lane: LaneFilter = state.lane): HoltTaskMeta[] {
-  const list =
-    lane === 'all' ? state.tasks : state.tasks.filter((t) => t.lane === lane);
+function projectSlugs(): string[] {
+  const set = new Set<string>();
+  for (const t of state.tasks) {
+    if (t.project) set.add(t.project);
+  }
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+function sortedTasks(
+  lane: LaneFilter = state.lane,
+  project: ProjectFilter = state.project,
+): HoltTaskMeta[] {
+  let list = state.tasks;
+  if (lane !== 'all') list = list.filter((t) => t.lane === lane);
+  if (project !== 'all') list = list.filter((t) => t.project === project);
   return [...list].sort(
     (a, b) => a.stack_order - b.stack_order || a.id.localeCompare(b.id),
   );
@@ -106,6 +132,9 @@ function selectedTask(): HoltTaskMeta | null {
 
 function formatEventLabel(e: HoltEvent): string {
   if (e.event === 'created') return 'create';
+  if (e.event === 'project_completed' && e.data) {
+    return `project ${String(e.data.project ?? '')} completed`;
+  }
   if (e.event === 'reordered' && e.data) {
     return `reorder ${e.data.from}→${e.data.to}`;
   }
@@ -148,6 +177,9 @@ async function refresh(opts?: { keepSelection?: boolean }): Promise<void> {
     if (state.selectedId && !tasks.some((t) => t.id === state.selectedId)) {
       state.selectedId = tasks[0]?.id ?? null;
     }
+    if (state.project !== 'all' && !projectSlugs().includes(state.project)) {
+      state.project = 'all';
+    }
     if (state.selectedId) {
       const { events } = await fetchHistory(state.selectedId);
       state.historyByTask[state.selectedId] = [...events].reverse();
@@ -166,14 +198,19 @@ function renderCard(
   index: number,
   total: number,
 ): string {
-  const h = estimateToHeight(task.estimate_min);
-  const est = task.estimate_min != null ? `${task.estimate_min}m` : '—';
+  const h = estimateToHeight(estimateMinutesOf(task));
+  const est = displayEstimate(task) ?? '—';
+  const openBb = openBlockersOf(task, state.tasks);
+  const blockedMark =
+    openBb.length > 0
+      ? `<span class="stack-blocked-mark" title="阻塞于 ${escapeHtml(openBb.join(', '))}">阻塞</span>`
+      : '';
 
   return `
     <div class="stack-card${selected ? ' is-selected' : ''}" style="min-height:${h}px" data-id="${task.id}" draggable="true" role="button" tabindex="0" aria-pressed="${selected}">
       <div class="stack-card-cols">
         <div class="stack-col stack-col-task">
-          <div class="stack-card-title">${escapeHtml(task.title)}</div>
+          <div class="stack-card-title">${blockedMark}${escapeHtml(task.title)}</div>
         </div>
         <div class="stack-col stack-col-status">${escapeHtml(task.status)}</div>
         <div class="stack-col stack-col-lane">${escapeHtml(task.lane)}</div>
@@ -207,9 +244,21 @@ function renderDetail(task: HoltTaskMeta | null): string {
 
   const lanes: LaneId[] = ['personal', 'work', 'openjobs'];
   const laneOptions = Array.from(new Set([...lanes, task.lane]));
+  const estVal = displayEstimate(task) ?? '';
+  const blocked = task.blocked_by ?? [];
+  const blockedList =
+    blocked.length === 0
+      ? '<div class="value muted">无</div>'
+      : `<ul class="blocked-list">${blocked
+          .map(
+            (id) =>
+              `<li><button type="button" class="linkish" data-select-task="${escapeHtml(id)}">${escapeHtml(id)}</button> <button type="button" class="linkish muted" data-rm-blocked="${escapeHtml(id)}">移除</button></li>`,
+          )
+          .join('')}</ul>`;
 
   return `
     <div class="detail-label">Detail · ${escapeHtml(task.id)}</div>
+    ${state.detailError ? `<div class="detail-error">${escapeHtml(state.detailError)}</div>` : ''}
     <h2 class="detail-title">${escapeHtml(task.title)}</h2>
     <div class="detail-fields">
       <div class="detail-field">
@@ -235,8 +284,21 @@ function renderDetail(task: HoltTaskMeta | null): string {
         </select>
       </div>
       <div class="detail-field">
-        <label>estimate</label>
-        <div class="value">${task.estimate_min != null ? `${task.estimate_min}m` : '—'}</div>
+        <label>估时</label>
+        <input type="text" data-field="estimate" value="${escapeHtml(estVal)}" placeholder="45m / 2h / 1d" />
+        <div class="field-hint">1d = 8 小时工作日</div>
+      </div>
+      <div class="detail-field">
+        <label>project</label>
+        <input type="text" data-field="project" value="${escapeHtml(task.project ?? '')}" placeholder="slug（空=未分组）" />
+      </div>
+      <div class="detail-field detail-field-block">
+        <label>阻塞于</label>
+        ${blockedList}
+        <div class="blocked-add">
+          <input type="text" data-add-blocked placeholder="T-0001" />
+          <button type="button" data-add-blocked-btn>添加前置</button>
+        </div>
       </div>
       <div class="detail-field">
         <label>hooks</label>
@@ -247,6 +309,11 @@ function renderDetail(task: HoltTaskMeta | null): string {
         <div class="value">${task.stack_order}</div>
       </div>
     </div>
+    ${
+      task.project
+        ? `<button type="button" class="noto-btn" data-complete-project="${escapeHtml(task.project)}">完成整个 project</button>`
+        : ''
+    }
     <button type="button" class="noto-btn" data-noto>在本机打开正文 / Noto</button>
     <div class="history-label">Recent history</div>
     <ul class="history-list">${history || '<li><span class="t">—</span><span>暂无</span></li>'}</ul>
@@ -266,7 +333,8 @@ function renderPushDialog(): string {
           <option value="openjobs">openjobs</option>
         </select>
       </label>
-      <label>estimate (min, optional)<input type="number" name="estimate" min="1" step="1" placeholder="e.g. 30" /></label>
+      <label>estimate (optional)<input type="text" name="estimate" placeholder="45m / 2h / 1d" /></label>
+      <label>project (optional)<input type="text" name="project" placeholder="slug" /></label>
       <div class="push-dialog-actions">
         <button type="button" class="primary" data-push-submit>创建</button>
         <button type="button" data-push-cancel>取消</button>
@@ -276,7 +344,7 @@ function renderPushDialog(): string {
 }
 
 function render(): void {
-  const tasks = sortedTasks(state.lane);
+  const tasks = sortedTasks(state.lane, state.project);
   const selected = selectedTask();
   const lanes: { id: LaneFilter; label: string }[] = [
     { id: 'all', label: 'All' },
@@ -284,6 +352,7 @@ function render(): void {
     { id: 'work', label: 'work' },
     { id: 'openjobs', label: 'openjobs' },
   ];
+  const projects = projectSlugs();
 
   const softHeader = `
         <div class="stack-soft-header-row" aria-hidden="true">
@@ -334,6 +403,22 @@ function render(): void {
                   `<button type="button" class="rail-item is-lane${
                     state.lane === l.id ? ' is-active' : ''
                   }" data-lane="${l.id}">${l.label}</button>`,
+              )
+              .join('')}
+          </nav>
+        </div>
+        <div>
+          <div class="rail-section-label">Projects</div>
+          <nav class="rail-nav">
+            <button type="button" class="rail-item is-project${
+              state.project === 'all' ? ' is-active' : ''
+            }" data-project="all">All</button>
+            ${projects
+              .map(
+                (p) =>
+                  `<button type="button" class="rail-item is-project${
+                    state.project === p ? ' is-active' : ''
+                  }" data-project="${escapeHtml(p)}">${escapeHtml(p)}</button>`,
               )
               .join('')}
           </nav>
@@ -393,6 +478,7 @@ function render(): void {
 
 async function selectAndLoad(id: string | null): Promise<void> {
   state.selectedId = id;
+  state.detailError = null;
   if (id) {
     state.detailCollapsed = false;
     try {
@@ -435,14 +521,10 @@ app.addEventListener('click', (e) => {
       if (!dialog || !state.pushWhere) return;
       const title = dialog.querySelector<HTMLInputElement>('input[name="title"]')?.value.trim();
       const lane = dialog.querySelector<HTMLSelectElement>('select[name="lane"]')?.value;
-      const estRaw = dialog.querySelector<HTMLInputElement>('input[name="estimate"]')?.value;
+      const estimate = dialog.querySelector<HTMLInputElement>('input[name="estimate"]')?.value.trim();
+      const project = dialog.querySelector<HTMLInputElement>('input[name="project"]')?.value.trim();
       if (!title || !lane) {
         showToast('需要 title 与 lane');
-        return;
-      }
-      const estimate_min = estRaw ? Number(estRaw) : undefined;
-      if (estRaw && !Number.isFinite(estimate_min)) {
-        showToast('estimate 须为数字');
         return;
       }
       try {
@@ -450,7 +532,8 @@ app.addEventListener('click', (e) => {
         const { task } = await apiPush({
           title,
           lane,
-          estimate_min,
+          estimate: estimate || undefined,
+          project: project || undefined,
           where: state.pushWhere,
         });
         state.pushWhere = null;
@@ -482,6 +565,76 @@ app.addEventListener('click', (e) => {
     return;
   }
 
+  const selectTask = t.closest<HTMLElement>('[data-select-task]');
+  if (selectTask?.dataset.selectTask) {
+    void selectAndLoad(selectTask.dataset.selectTask);
+    return;
+  }
+
+  const rmBlocked = t.closest<HTMLElement>('[data-rm-blocked]');
+  if (rmBlocked?.dataset.rmBlocked) {
+    const task = selectedTask();
+    if (!task) return;
+    void (async () => {
+      try {
+        state.detailError = null;
+        await updateTask(task.id, { rm_blocked_by: [rmBlocked.dataset.rmBlocked!] });
+        await refresh({ keepSelection: true });
+      } catch (err) {
+        state.detailError = friendlyError(err);
+        render();
+      }
+    })();
+    return;
+  }
+
+  if (t.closest('[data-add-blocked-btn]')) {
+    const task = selectedTask();
+    const input = app.querySelector<HTMLInputElement>('[data-add-blocked]');
+    const id = input?.value.trim();
+    if (!task || !id) return;
+    void (async () => {
+      try {
+        state.detailError = null;
+        await updateTask(task.id, { add_blocked_by: [id] });
+        await refresh({ keepSelection: true });
+      } catch (err) {
+        state.detailError = friendlyError(err);
+        render();
+      }
+    })();
+    return;
+  }
+
+  const completeProj = t.closest<HTMLElement>('[data-complete-project]');
+  if (completeProj?.dataset.completeProject) {
+    const slug = completeProj.dataset.completeProject;
+    if (
+      !window.confirm(
+        `将把「${slug}」下所有进行中任务标为完成。依赖未清的会整批取消。`,
+      )
+    ) {
+      return;
+    }
+    void (async () => {
+      try {
+        state.detailError = null;
+        const result = await apiCompleteProject(slug);
+        await refresh({ keepSelection: true });
+        showToast(
+          result.task_ids.length
+            ? `已完成 project ${result.project}（${result.task_ids.length} 项）`
+            : `project ${result.project}：无进行中任务`,
+        );
+      } catch (err) {
+        state.detailError = friendlyError(err);
+        showToast(friendlyError(err));
+        render();
+      }
+    })();
+    return;
+  }
+
   const card = t.closest<HTMLElement>('.stack-card[data-id]');
   if (card?.dataset.id) {
     void selectAndLoad(card.dataset.id);
@@ -491,7 +644,18 @@ app.addEventListener('click', (e) => {
   const lane = t.closest<HTMLElement>('[data-lane]');
   if (lane?.dataset.lane) {
     state.lane = lane.dataset.lane as LaneFilter;
-    const visible = sortedTasks(state.lane);
+    const visible = sortedTasks(state.lane, state.project);
+    if (state.selectedId && !visible.some((x) => x.id === state.selectedId)) {
+      state.selectedId = visible[0]?.id ?? null;
+    }
+    render();
+    return;
+  }
+
+  const proj = t.closest<HTMLElement>('[data-project]');
+  if (proj?.dataset.project) {
+    state.project = proj.dataset.project as ProjectFilter;
+    const visible = sortedTasks(state.lane, state.project);
     if (state.selectedId && !visible.some((x) => x.id === state.selectedId)) {
       state.selectedId = visible[0]?.id ?? null;
     }
@@ -551,20 +715,65 @@ app.addEventListener('click', (e) => {
 });
 
 app.addEventListener('change', (e) => {
-  const el = e.target as HTMLSelectElement;
+  const el = e.target as HTMLSelectElement | HTMLInputElement;
   const task = selectedTask();
   if (!task) return;
   if (el.dataset.field === 'status') {
     void (async () => {
-      await updateTask(task.id, { status: el.value as HoltStatus });
-      await refresh({ keepSelection: true });
-    })().catch((err) => showToast(err instanceof Error ? err.message : String(err)));
+      try {
+        state.detailError = null;
+        await updateTask(task.id, { status: (el as HTMLSelectElement).value as HoltStatus });
+        await refresh({ keepSelection: true });
+      } catch (err) {
+        state.detailError = friendlyError(err);
+        showToast(friendlyError(err));
+        render();
+      }
+    })();
   }
   if (el.dataset.field === 'lane') {
     void (async () => {
-      await updateTask(task.id, { lane: el.value });
+      await updateTask(task.id, { lane: (el as HTMLSelectElement).value });
       await refresh({ keepSelection: true });
     })().catch((err) => showToast(err instanceof Error ? err.message : String(err)));
+  }
+});
+
+app.addEventListener('focusout', (e) => {
+  const el = e.target as HTMLInputElement;
+  const task = selectedTask();
+  if (!task || !el.dataset?.field) return;
+  if (el.dataset.field === 'estimate') {
+    const raw = el.value.trim();
+    const current = displayEstimate(task) ?? '';
+    if (raw === current) return;
+    void (async () => {
+      try {
+        state.detailError = null;
+        await updateTask(task.id, { estimate: raw === '' ? null : raw });
+        await refresh({ keepSelection: true });
+      } catch (err) {
+        state.detailError = friendlyError(err);
+        showToast(friendlyError(err));
+        render();
+      }
+    })();
+  }
+  if (el.dataset.field === 'project') {
+    const raw = el.value.trim();
+    const current = task.project ?? '';
+    if (raw === current) return;
+    void (async () => {
+      try {
+        state.detailError = null;
+        await updateTask(task.id, { project: raw === '' ? null : raw });
+        await refresh({ keepSelection: true });
+      } catch (err) {
+        state.detailError = friendlyError(err);
+        showToast(friendlyError(err));
+        render();
+      }
+    })();
   }
 });
 
@@ -618,7 +827,7 @@ app.addEventListener('drop', (e) => {
   const card = (e.target as HTMLElement).closest<HTMLElement>('.stack-card[data-id]');
   if (!card?.dataset.id || !dragId) return;
   e.preventDefault();
-  const ordered = sortedTasks('all');
+  const ordered = sortedTasks('all', 'all');
   const toIndex = ordered.findIndex((t) => t.id === card.dataset.id);
   const id = dragId;
   dragId = null;

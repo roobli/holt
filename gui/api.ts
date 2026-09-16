@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
+  completeProject,
   listTasks,
   moveTask,
   pushTask,
@@ -252,7 +253,10 @@ export async function handleApi(
       const body = (await readBody(req)) as {
         title?: string;
         lane?: string;
+        estimate?: string;
         estimate_min?: number;
+        project?: string;
+        blocked_by?: string[];
         where?: 'top' | 'bottom';
       };
       if (!body.title || !body.lane) {
@@ -262,7 +266,10 @@ export async function handleApi(
       const meta = await pushTask(state.ledgerRoot, {
         title: body.title,
         lane: body.lane,
+        estimate: body.estimate,
         estimate_min: body.estimate_min,
+        project: body.project,
+        blocked_by: body.blocked_by,
         where: body.where ?? 'top',
         actor: ACTOR,
       });
@@ -317,6 +324,17 @@ export async function handleApi(
       const { id, ...patch } = body;
       const meta = await updateTask(state.ledgerRoot, id, patch, ACTOR);
       sendJson(res, 200, { task: meta });
+      return true;
+    }
+
+    if (method === 'POST' && path === '/api/complete-project') {
+      const body = (await readBody(req)) as { project?: string };
+      if (!body.project || typeof body.project !== 'string') {
+        sendJson(res, 400, { error: 'project required' });
+        return true;
+      }
+      const result = await completeProject(state.ledgerRoot, body.project, ACTOR);
+      sendJson(res, 200, result);
       return true;
     }
 

@@ -2,6 +2,24 @@ import type { HoltTaskMeta } from './types.ts';
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
+function parseInlineList(val: string): string[] {
+  const inner = val.slice(1, -1).trim();
+  if (!inner) return [];
+  return inner
+    .split(',')
+    .map((part) => {
+      let s = part.trim();
+      if (
+        (s.startsWith('"') && s.endsWith('"')) ||
+        (s.startsWith("'") && s.endsWith("'"))
+      ) {
+        s = s.slice(1, -1);
+      }
+      return s;
+    })
+    .filter((s) => s.length > 0);
+}
+
 /** Minimal YAML subset for our known scalar/list fields — enough for tests. */
 export function parseTaskMarkdown(raw: string): { meta: HoltTaskMeta; body: string } {
   const m = FRONTMATTER.exec(raw);
@@ -15,8 +33,8 @@ export function parseTaskMarkdown(raw: string): { meta: HoltTaskMeta; body: stri
     if (i < 0) continue;
     const key = line.slice(0, i).trim();
     let val = line.slice(i + 1).trim();
-    if (val === '[]') {
-      meta[key] = [];
+    if (val.startsWith('[') && val.endsWith(']')) {
+      meta[key] = parseInlineList(val);
       continue;
     }
     if (/^-?\d+(\.\d+)?$/.test(val)) {
