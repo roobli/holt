@@ -1,48 +1,87 @@
 # holt
 
-Personal **task stack** companion: ordered vertical stack first, optional gantt timeline later.
+**holt：vault 旁的本地任务账本，不是网站。**
 
-**Local-private first.** Source of truth = ledger files beside your vault (`tasks/*.md` + `history.ndjson`), not github.io. GUI / CLI / nvim are adapters over the same file model and command semantics.
+Source of truth = `tasks/*.md` + `history.ndjson` on disk. CLI and Stack GUI share the same commands. github.io is a mock demo only.
 
-- Each task is a Markdown file; `history.ndjson` is append-only audit
-- Task file = readable current state; history = audit (not pure-replay truth)
-- Implementation order: file model → CLI → **Stack GUI ↔ local dir** → nvim later
+---
 
-## Status
+## 最短日常用法
 
-- File model + **CLI** + **local Stack GUI** — same commands over a ledger path
-- Clickable Stack demo on Pages — **mock only** (in-memory); not the product
-- Timeline (gantt) deferred
-
-## Shared commands
-
-CLI and local GUI both use `src/commands.ts` (`listTasks`, `pushTask`, `reorderTask`, `readHistory`, `updateTask`, `completeProject`, `ensureLedger` / `inspectLedger`, `openTaskBody`, plus GUI helpers `moveTask` / `reorderToIndex`). Write rules stay in `src/core/ledger.ts`.
-
-## CLI (local ledger)
+### 安装
 
 ```sh
+git clone https://github.com/roobli/holt.git && cd holt
 pnpm install
-# from repo root; default ledger: arg → $HOLT_LEDGER → ~/.config/holt/config.json lastLedger → ./sample
+```
+
+（需要 Node 22+。）可选：`pnpm link --global` 后直接用 `holt …`。
+
+### 默认 ledger
+
+解析顺序（CLI 与 GUI 相同）：
+
+1. 命令里显式路径  
+2. 环境变量 `HOLT_LEDGER`  
+3. `~/.config/holt/config.json` 的 `lastLedger`  
+4. 回退 `./sample`
+
+显式打开过的路径会写回 `lastLedger`，两边共用。细节：[docs/ledger-resolution.md](docs/ledger-resolution.md)。
+
+### 每天三行 · CLI
+
+```sh
 pnpm holt list
-pnpm holt list --project holt-mvp --json
-pnpm holt push --title "Ship CLI" --lane work --estimate 2h --project holt-mvp --top
-pnpm holt update T-0002 --blocked-by T-0001 --estimate 1d
-pnpm holt update T-0002 --add-blocked-by T-0003
-pnpm holt update T-0001 --status done
+pnpm holt push --title "写日报" --lane work --estimate 45m --top
+pnpm holt update T-0001 --status doing
+```
+
+### 每天三行 · GUI
+
+```sh
+pnpm gui:dev
+# 浏览器打开终端里打印的地址（默认 http://127.0.0.1:5174）
+# 另一终端改文件会热刷：pnpm holt push --title "from CLI" --lane personal --top
+```
+
+### 完成整个 project 一例
+
+```sh
+pnpm holt push --title "A" --lane work --project holt-mvp --estimate 2h --top
+pnpm holt push --title "B" --lane work --project holt-mvp --estimate 1d --top
+# 若 B 依赖 A：先 --blocked-by <A的id>，必须先把 A done，否则 complete 整批拒绝
+pnpm holt list --project holt-mvp
 pnpm holt complete-project holt-mvp
-pnpm holt reorder T-0001 --to 10
-pnpm holt history --task T-0001 --json
-pnpm holt open-body T-0001          # $EDITOR / xdg-open / open
-pnpm holt ensure-ledger /tmp/my-holt
-pnpm holt inspect ./sample --json
-
-# or via bin after link:
-pnpm link --global   # optional
-holt list ./sample
 ```
-Estimate accepts `45m` / `2h` / `1d` (1d = 8h) or a bare minute number. Soft table headers stay four columns (no deps/project columns). `--json` on `list` / `history` / `inspect` prints stable machine JSON on stdout.
 
-Commands operate on a ledger directory:
+GUI：左侧 Projects 过滤 → 打开某条 Detail →「完成整个 project」（同语义、全有或全无）。
+
+### 再建一个自己的账本
+
+```sh
+pnpm holt ensure-ledger ~/notes/holt-ledger
+pnpm holt list ~/notes/holt-ledger
+pnpm gui:dev ~/notes/holt-ledger
+```
+
+---
+
+## 常用命令速查
+
+```sh
+pnpm holt list [--project <slug>] [--json]
+pnpm holt push --title <t> --lane <lane> [--estimate 45m|2h|1d] [--project <slug>] [--top|--bottom]
+pnpm holt update <id> [--status …] [--estimate …] [--project …] [--blocked-by …]
+pnpm holt reorder <id> --to <stack_order>
+pnpm holt history [--task <id>] [--json]
+pnpm holt open-body <id>                 # $EDITOR / 系统打开 md
+pnpm holt inspect [--json]
+pnpm holt complete-project <slug>
+```
+
+估时：`45m` / `2h` / `1d`（**1d = 8h**）或纯分钟数；双写 `estimate_min`。有 `blocked_by` 时标 `done` 会被人话拒绝。
+
+## 文件布局
 
 ```
 <ledger>/
@@ -50,50 +89,21 @@ Commands operate on a ledger directory:
   history.ndjson
 ```
 
-## Local Stack GUI (file-backed)
+见 [docs/file-model.md](docs/file-model.md)。
 
-```sh
-pnpm gui:dev            # http://127.0.0.1:5174 · arg → $HOLT_LEDGER → lastLedger → ./sample
-pnpm gui:dev /path/to/ledger
-```
+## 表面对照
 
-Push / reorder / history in the GUI update the same files the CLI reads (and vice versa). **GUI auto-refreshes** when CLI or an editor changes ledger files (`fs.watch` → SSE). Path bar can validate / **创建** an empty ledger (`tasks/` + `history.ndjson`); last path is stored in `~/.config/holt/config.json` (shared with CLI; legacy `gui.json` still read). See [docs/ledger-resolution.md](docs/ledger-resolution.md). The repo `sample/` ledger is a **clean seed** (see `sample/README.md`); use temp dirs for smoke tests.
-
-Details: [gui/README.md](gui/README.md).
-
-Visual: Stack v1.2 (soft table headers, Detail default collapsed, wide shell). Do not restyle the table shell further — harden ledger wiring instead.
-
-## Stack demo (mock only)
-
-```sh
-pnpm demo:dev
-```
-
-Live Pages (clickable **mock** only — in-memory / localStorage): https://roobli.github.io/holt/
-
-Details: [demo/README.md](demo/README.md). **Do not treat the website as the product**; do not expand the demo further.
-
-| Surface | Backing | Command |
+| 表面 | 真相 | 怎么开 |
 | --- | --- | --- |
-| CLI | ledger dir on disk | `pnpm holt …` |
-| Local GUI | same ledger dir | `pnpm gui:dev` |
-| github.io demo | in-memory mock | `pnpm demo:dev` / Pages |
+| CLI | 本机 ledger | `pnpm holt …` |
+| Local GUI | 同一 ledger | `pnpm gui:dev` |
+| github.io | 内存 mock | 仅演示，不当产品 |
 
-## Ledger layout
-
-```
-<ledger>/
-  tasks/T-0001.md
-  history.ndjson
-  state.json          # optional cache
-```
-
-See [docs/file-model.md](docs/file-model.md).
+更多：[gui/README.md](gui/README.md) · mock：[demo/README.md](demo/README.md)
 
 ## Develop
 
 ```sh
-pnpm install
 pnpm test
 pnpm typecheck
 ```
