@@ -42,12 +42,27 @@ body {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 168px minmax(0, 1fr) 300px;
+  /* Wide lock: narrow rail · Stack eats width · Detail shrinks (not 2nd main) */
+  grid-template-columns: 200px minmax(0, 1fr) var(--detail-w, 280px);
   gap: 0;
+  width: 100%;
+  max-width: none;
   min-height: 100vh;
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 20px 18px 24px;
+  margin: 0;
+  padding: 16px 20px 20px;
+  box-sizing: border-box;
+}
+
+.app-shell.is-detail-collapsed {
+  --detail-w: 0px;
+}
+
+.app-shell.is-detail-collapsed .detail {
+  overflow: hidden;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* —— Left rail —— */
@@ -153,6 +168,31 @@ body {
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+.main-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.detail-toggle {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--btn-quiet);
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.detail-toggle:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
 }
 
 .main-header h1 {

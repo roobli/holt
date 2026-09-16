@@ -34,6 +34,7 @@ const state: UiState = {
   error: null,
   pushWhere: null,
   busy: false,
+  detailCollapsed: false,
 };
 
 let toastTimer: number | undefined;
@@ -282,7 +283,7 @@ function render(): void {
           .join('')}</div>`;
 
   app.innerHTML = `
-    <div class="app-shell">
+    <div class="app-shell${state.detailCollapsed ? ' is-detail-collapsed' : ''}">
       <aside class="rail">
         <div class="brand">
           <div class="brand-name">holt</div>
@@ -315,8 +316,15 @@ function render(): void {
 
       <main class="main">
         <header class="main-header">
-          <h1>Stack</h1>
-          <p class="main-sub">本地 ledger · 与 CLI 同语义 · 拖拽 / ↑↓</p>
+          <div class="main-header-row">
+            <div>
+              <h1>Stack</h1>
+              <p class="main-sub">本地 ledger · 与 CLI 同语义 · 拖拽 / ↑↓</p>
+            </div>
+            <button type="button" class="detail-toggle" data-detail-toggle>
+              ${state.detailCollapsed ? '显示 Detail' : '收起 Detail'}
+            </button>
+          </div>
         </header>
         ${state.error ? `<div class="error-banner">${escapeHtml(state.error)}</div>` : ''}
         <div class="ledger-bar">
@@ -356,6 +364,12 @@ async function selectAndLoad(id: string | null): Promise<void> {
 
 app.addEventListener('click', (e) => {
   const t = e.target as HTMLElement;
+
+  if (t.closest('[data-detail-toggle]')) {
+    state.detailCollapsed = !state.detailCollapsed;
+    render();
+    return;
+  }
 
   const push = t.closest<HTMLElement>('[data-push]');
   if (push?.dataset.push === 'top' || push?.dataset.push === 'bottom') {
