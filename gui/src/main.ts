@@ -34,7 +34,7 @@ const state: UiState = {
   error: null,
   pushWhere: null,
   busy: false,
-  detailCollapsed: false,
+  detailCollapsed: true,
 };
 
 let toastTimer: number | undefined;
@@ -287,7 +287,7 @@ function render(): void {
       <aside class="rail">
         <div class="brand">
           <div class="brand-name">holt</div>
-          <div class="brand-tag">local</div>
+          <div class="brand-tag">companion</div>
         </div>
         <div>
           <div class="rail-section-label">Views</div>
@@ -319,10 +319,10 @@ function render(): void {
           <div class="main-header-row">
             <div>
               <h1>Stack</h1>
-              <p class="main-sub">本地 ledger · 与 CLI 同语义 · 拖拽 / ↑↓</p>
+              <p class="main-sub">优先序 · 拖拽 reorder · 主列吃满可用宽</p>
             </div>
             <button type="button" class="detail-toggle" data-detail-toggle>
-              ${state.detailCollapsed ? '显示 Detail' : '收起 Detail'}
+              ${state.detailCollapsed ? 'Detail' : '收起 ›'}
             </button>
           </div>
         </header>
@@ -352,6 +352,7 @@ function render(): void {
 async function selectAndLoad(id: string | null): Promise<void> {
   state.selectedId = id;
   if (id) {
+    state.detailCollapsed = false;
     try {
       const { events } = await fetchHistory(id);
       state.historyByTask[id] = [...events].reverse();
