@@ -6,10 +6,10 @@
   --ink-faint: #9a968c;
   --line: #d8d4cb;
   --line-strong: #2a2926;
-  --accent: #3a4554;
+  --accent: #375A6E;
   --rail-active-bg: #ebe8e0;
   --btn-quiet: #f0eee8;
-  --select-ring: #2f3640;
+  --select-ring: #375A6E;
   --radius: 10px;
   --radius-sm: 8px;
   --font: 'IBM Plex Sans', 'IBM Plex Sans SC', 'PingFang SC', 'Noto Sans SC',
@@ -63,7 +63,7 @@ body {
 }
 
 .brand-name {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.1;
@@ -157,7 +157,7 @@ body {
 
 .main-header h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.03em;
 }
