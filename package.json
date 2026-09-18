@@ -7,9 +7,6 @@
   "scripts": {
     "test": "node --experimental-strip-types --test src/core/*.test.ts src/commands.test.ts src/cli.test.ts gui/config.test.ts gui/api-ledger.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "demo:dev": "vite --config demo/vite.config.ts",
-    "demo:build": "vite build --config demo/vite.config.ts",
-    "demo:preview": "vite preview --config demo/vite.config.ts",
     "gui:dev": "node --experimental-strip-types gui/dev.ts",
     "holt": "node --experimental-strip-types src/cli.ts"
   },

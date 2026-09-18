@@ -2,7 +2,7 @@
 
 **holt：vault 旁的本地任务账本，不是网站。**
 
-Source of truth = `tasks/*.md` + `history.ndjson` on disk. CLI and Stack GUI share the same commands. github.io is a mock demo only.
+Source of truth = `tasks/*.md` + `history.ndjson` on disk. CLI and Stack GUI share the same commands.
 
 ---
 
@@ -97,9 +97,8 @@ pnpm holt complete-project <slug>
 | --- | --- | --- |
 | CLI | 本机 ledger | `pnpm holt …` |
 | Local GUI | 同一 ledger | `pnpm gui:dev` |
-| github.io | 内存 mock | 仅演示，不当产品 |
 
-更多：[gui/README.md](gui/README.md) · mock：[demo/README.md](demo/README.md)
+更多：[gui/README.md](gui/README.md) 
 
 ## Develop
 
