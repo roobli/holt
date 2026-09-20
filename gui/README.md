@@ -1,6 +1,6 @@
 # holt local Stack GUI
 
-File-backed Stack UI over a ledger directory on disk. Uses the **same command layer** as the CLI (`src/commands.ts` → `src/core/ledger.ts`). This is the product-facing GUI path; the github.io demo remains an in-memory mock only.
+File-backed Stack UI over a ledger directory on disk. Uses the **same command layer** as the CLI (`src/commands.ts` → `src/core/ledger.ts`). This is the product-facing GUI path (local only; no public demo site).
 
 ## Run
 
@@ -8,9 +8,12 @@ From repo root:
 
 ```sh
 pnpm install
-pnpm gui:dev            # ledger: arg → $HOLT_LEDGER → ~/.config/holt/config.json lastLedger → ./sample
-pnpm gui:dev ./sample   # or any ledger path
+pnpm holt gui           # preferred — same as pnpm gui:dev
+pnpm holt gui ~/notes/holt-ledger
+pnpm gui:dev            # equivalent low-level script
 ```
+
+Prefer a personal ledger (`~/…/holt-ledger`); `./sample` is for tryouts only.
 
 Open `http://127.0.0.1:5174` (override with `HOLT_GUI_PORT`).
 

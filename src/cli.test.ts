@@ -219,3 +219,10 @@ test('cli open-body headless warns on stderr but prints path', async () => {
     assert.match(res.stderr, /no opener/i);
   }
 });
+
+test('cli --help lists gui', () => {
+  const res = holt(['--help']);
+  assert.equal(res.status, 2);
+  assert.match(res.stderr, /holt gui/);
+  assert.match(res.stderr, /Noto\.app/);
+});

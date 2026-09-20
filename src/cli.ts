@@ -12,7 +12,9 @@
  * After a successful command with an explicit ledger path, lastLedger is updated
  * (same as GUI open) so CLI and GUI stay in sync.
  */
-import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   completeProject,
   displayEstimate,
@@ -27,6 +29,8 @@ import {
   updateTask,
   type UpdateTaskPatch,
 } from './commands.ts';
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 import type { HoltStatus } from './core/types.ts';
 import { rememberLastLedger, resolveLedger } from './core/resolve-ledger.ts';
 
@@ -42,12 +46,15 @@ Usage:
   holt reorder [ledger] <id> --to <stack_order>
   holt history [ledger] [--task <id>] [--json]
   holt open-body [ledger] <id> [--editor <cmd>]
+  holt gui [ledger]
   holt ensure-ledger <path>
   holt inspect [ledger] [--json]
 
 Default ledger: explicit arg → HOLT_LEDGER → ~/.config/holt/config.json lastLedger → ./sample
+Prefer a personal ledger (e.g. ~/notes/holt-ledger); ./sample is for tryouts only.
 Estimate: 45m / 2h / 1d (1d = 8h); bare number = minutes.
 --json: machine-stable stdout for list / history / inspect.
+open-body: $EDITOR / --editor, else Noto.app on Mac if present, else system open.
 `);
   process.exit(2);
 }
@@ -383,6 +390,16 @@ async function cmdInspect(
   console.log(`history: ${info.history_exists ? 'yes' : 'no'}`);
 }
 
+async function cmdGui(ledger: string): Promise<void> {
+  const guiDev = join(repoRoot, 'gui', 'dev.ts');
+  const result = spawnSync(
+    process.execPath,
+    ['--experimental-strip-types', guiDev, ledger],
+    { stdio: 'inherit', cwd: repoRoot },
+  );
+  process.exit(result.status ?? 1);
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (argv.length === 0 || argv.includes('--help') || argv.includes('-h')) usage();
@@ -432,6 +449,12 @@ async function main(): Promise<void> {
       const { ledger, id, fromExplicit } = await ledgerAndId(rest);
       await cmdOpenBody(ledger, id, flags);
       await maybeRemember(ledger, fromExplicit);
+      break;
+    }
+    case 'gui': {
+      const { path, fromExplicit } = await resolveOptionalLedger(rest);
+      await maybeRemember(path, fromExplicit);
+      await cmdGui(path);
       break;
     }
     case 'ensure-ledger': {

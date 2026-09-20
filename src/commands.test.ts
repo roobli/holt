@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, mkdir} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -11,6 +11,7 @@ import {
   moveTask,
   openTaskBody,
   canUsePlatformOpener,
+  detectNotoApp,
   pushTask,
   readHistory,
   reorderToIndex,
@@ -252,6 +253,44 @@ test('openTaskBody headless no-op without editor', async () => {
     else delete process.env.DISPLAY;
     if (prevWayland !== undefined) process.env.WAYLAND_DISPLAY = prevWayland;
     else delete process.env.WAYLAND_DISPLAY;
+    if (prevEditor !== undefined) process.env.EDITOR = prevEditor;
+    else delete process.env.EDITOR;
+    if (prevVisual !== undefined) process.env.VISUAL = prevVisual;
+    else delete process.env.VISUAL;
+  }
+});
+
+test('detectNotoApp finds ~/Applications/Noto.app on darwin', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'holt-noto-'));
+  await mkdir(join(home, 'Applications', 'Noto.app'), { recursive: true });
+  assert.equal(detectNotoApp('darwin', home), join(home, 'Applications', 'Noto.app'));
+  assert.equal(detectNotoApp('linux', home), null);
+});
+
+test('openTaskBody prefers noto via override without EDITOR', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'holt-open-noto-'));
+  await ensureLedger(root);
+  const a = await pushTask(root, { title: 'Noto', lane: 'work', actor: 'test' });
+  const home = await mkdtemp(join(tmpdir(), 'holt-noto-home-'));
+  const noto = join(home, 'Applications', 'Noto.app');
+  await mkdir(noto, { recursive: true });
+  const prevEditor = process.env.EDITOR;
+  const prevVisual = process.env.VISUAL;
+  delete process.env.EDITOR;
+  delete process.env.VISUAL;
+  try {
+    // On non-darwin CI we still exercise the branch via platform override;
+    // spawn('open') may fail on linux — catch via opened/via when open missing.
+    const result = await openTaskBody(root, a.id, {
+      platform: 'darwin',
+      notoApp: noto,
+      home,
+    });
+    assert.ok(result.path.endsWith(`${a.id}.md`));
+    // Spawn is fire-and-forget; we still record the intended via=noto branch.
+    assert.equal(result.via, 'noto');
+    assert.equal(result.opened, true);
+  } finally {
     if (prevEditor !== undefined) process.env.EDITOR = prevEditor;
     else delete process.env.EDITOR;
     if (prevVisual !== undefined) process.env.VISUAL = prevVisual;

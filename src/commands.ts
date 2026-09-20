@@ -2,8 +2,11 @@
  * Shared ledger commands — CLI and local GUI adapters call these only.
  * Write rules live in src/core/ledger.ts; this module is the stable surface.
  */
+import { accessSync, existsSync } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
+import { homedir } from 'node:os';
+import { join as pathJoin } from 'node:path';
 import {
   listLedgerTasks,
   listHistory,
@@ -337,9 +340,42 @@ export interface OpenTaskBodyOptions {
   editor?: string;
   /**
    * When true (default), wait for EDITOR to exit.
-   * Platform openers (xdg-open / open) are always detached.
+   * Platform openers (xdg-open / open / Noto) are always detached.
    */
   wait?: boolean;
+  /**
+   * Override Noto.app detection (tests). Absolute path to Noto.app,
+   * or `null` to skip the Noto probe even on macOS.
+   */
+  notoApp?: string | null;
+  /** Override platform (tests). */
+  platform?: NodeJS.Platform;
+  /** Override home directory for Noto probe (tests). */
+  home?: string;
+}
+
+/**
+ * Prefer Noto on macOS when installed (Applications or ~/Applications).
+ * Returns the .app path, or null if not found / not darwin.
+ */
+export function detectNotoApp(
+  platform: NodeJS.Platform = process.platform,
+  home: string = homedir(),
+): string | null {
+  if (platform !== 'darwin') return null;
+  const candidates = [
+    '/Applications/Noto.app',
+    pathJoin(home, 'Applications', 'Noto.app'),
+  ];
+  for (const c of candidates) {
+    try {
+      accessSync(c);
+      return c;
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
 }
 
 /** True when a platform file opener is likely to do something visible. */
@@ -353,7 +389,10 @@ export function canUsePlatformOpener(
 }
 
 /**
- * Resolve task md path and open with $EDITOR / xdg-open / open
+ * Resolve task md path and open with:
+ *   1. --editor / $EDITOR / $VISUAL
+ *   2. macOS: Noto.app if installed (`open -a`)
+ *   3. platform default (`open` / `xdg-open` / `start`)
  * (same spirit as GUI CTA「在本机打开正文」).
  * Headless (no DISPLAY/WAYLAND and no editor): returns opened=false, via=none.
  */
@@ -380,19 +419,32 @@ export async function openTaskBody(
     return { path, opened: true, via: 'editor' };
   }
 
-  if (!canUsePlatformOpener()) {
+  const platform = opts.platform ?? process.platform;
+  if (!canUsePlatformOpener(process.env, platform)) {
     return { path, opened: false, via: 'none' };
   }
 
-  const platform = process.platform;
   try {
     if (platform === 'darwin') {
+      const noto =
+        opts.notoApp === null
+          ? null
+          : opts.notoApp !== undefined
+            ? opts.notoApp
+            : detectNotoApp(platform, opts.home ?? homedir());
+      if (noto && existsSync(noto)) {
+        // Detached open -a: stable on Mac (does not wait; prefers Noto over TextEdit).
+        spawn('open', ['-a', noto, path], { detached: true, stdio: 'ignore' }).unref();
+        return { path, opened: true, via: 'noto' };
+      }
       spawn('open', [path], { detached: true, stdio: 'ignore' }).unref();
-    } else if (platform === 'win32') {
-      spawn('cmd', ['/c', 'start', '', path], { detached: true, stdio: 'ignore' }).unref();
-    } else {
-      spawn('xdg-open', [path], { detached: true, stdio: 'ignore' }).unref();
+      return { path, opened: true, via: 'platform' };
     }
+    if (platform === 'win32') {
+      spawn('cmd', ['/c', 'start', '', path], { detached: true, stdio: 'ignore' }).unref();
+      return { path, opened: true, via: 'platform' };
+    }
+    spawn('xdg-open', [path], { detached: true, stdio: 'ignore' }).unref();
     return { path, opened: true, via: 'platform' };
   } catch {
     return { path, opened: false, via: 'none' };

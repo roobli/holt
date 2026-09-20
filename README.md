@@ -26,6 +26,8 @@ pnpm install
 3. `~/.config/holt/config.json` 的 `lastLedger`  
 4. 回退 `./sample`
 
+**推荐自建** `~/notes/holt-ledger`（或任意 vault 旁目录）当日常账本；`./sample` 只适合试跑，别长期用。
+
 显式打开过的路径会写回 `lastLedger`，两边共用。细节：[docs/ledger-resolution.md](docs/ledger-resolution.md)。
 
 ### 每天三行 · CLI
@@ -39,7 +41,8 @@ pnpm holt update T-0001 --status doing
 ### 每天三行 · GUI
 
 ```sh
-pnpm gui:dev
+pnpm holt gui
+# 或：holt gui   （pnpm link --global 之后）
 # 浏览器打开终端里打印的地址（默认 http://127.0.0.1:5174）
 # 另一终端改文件会热刷：pnpm holt push --title "from CLI" --lane personal --top
 ```
@@ -61,7 +64,7 @@ GUI：左侧 Projects 过滤 → 打开某条 Detail →「完成整个 project�
 ```sh
 pnpm holt ensure-ledger ~/notes/holt-ledger
 pnpm holt list ~/notes/holt-ledger
-pnpm gui:dev ~/notes/holt-ledger
+pnpm holt gui ~/notes/holt-ledger
 ```
 
 ---
@@ -74,7 +77,8 @@ pnpm holt push --title <t> --lane <lane> [--estimate 45m|2h|1d] [--project <slug
 pnpm holt update <id> [--status …] [--estimate …] [--project …] [--blocked-by …]
 pnpm holt reorder <id> --to <stack_order>
 pnpm holt history [--task <id>] [--json]
-pnpm holt open-body <id>                 # $EDITOR / 系统打开 md
+pnpm holt open-body <id>                 # $EDITOR → Noto.app(Mac) → 系统打开
+pnpm holt gui [ledger]                   # 一键起本机 GUI（少记 pnpm gui:dev）
 pnpm holt inspect [--json]
 pnpm holt complete-project <slug>
 ```
@@ -96,7 +100,7 @@ pnpm holt complete-project <slug>
 | 表面 | 真相 | 怎么开 |
 | --- | --- | --- |
 | CLI | 本机 ledger | `pnpm holt …` |
-| Local GUI | 同一 ledger | `pnpm gui:dev` |
+| Local GUI | 同一 ledger | `holt gui` / `pnpm holt gui` |
 
 更多：[gui/README.md](gui/README.md) 
 
