@@ -309,3 +309,56 @@ test('POST /api/open returns honest opened=false when headless (no editor)', asy
     }
   });
 });
+
+test('GET /api/tasks/:id returns body with soft links intact', async () => {
+  await withApi(async (port, _state, root) => {
+    const a = await pushTask(root, { title: 'Alpha', lane: 'work', actor: 'test' });
+    const b = await pushTask(root, { title: 'Beta', lane: 'work', actor: 'test' });
+    // Write body containing soft link via update path: read file, rewrite body
+    const { readFile, writeFile } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const path = join(root, 'tasks', `${b.id}.md`);
+    const raw = await readFile(path, 'utf8');
+    const next = raw.replace(/\n---\n[\s\S]*$/, `\n---\n\nSee @{${a.id}} and @{T-9999}.\n`);
+    await writeFile(path, next, 'utf8');
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/tasks/${encodeURIComponent(b.id)}`);
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { task: { id: string }; body: string; path: string };
+    assert.equal(body.task.id, b.id);
+    assert.match(body.body, new RegExp(`@\\{${a.id}\\}`));
+    assert.match(body.body, /@\{T-9999\}/);
+    assert.ok(body.path.endsWith(`${b.id}.md`));
+  });
+});
+
+test('POST /api/open still wires openTaskBody (path always returned)', async () => {
+  await withApi(async (port, _state, root) => {
+    const task = await pushTask(root, { title: 'Edit me', lane: 'personal', actor: 'test' });
+    const prevEditor = process.env.EDITOR;
+    const prevVisual = process.env.VISUAL;
+    // Use a no-op editor so opened=true without GUI
+    const script = join(root, 'fake-editor.mjs');
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(script, 'process.exit(0);\n', 'utf8');
+    process.env.EDITOR = `node ${script}`;
+    delete process.env.VISUAL;
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/open`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: task.id }),
+      });
+      assert.equal(res.status, 200);
+      const out = (await res.json()) as { path: string; opened: boolean; via: string };
+      assert.ok(out.path.endsWith(`${task.id}.md`));
+      assert.equal(out.opened, true);
+      assert.equal(out.via, 'editor');
+    } finally {
+      if (prevEditor !== undefined) process.env.EDITOR = prevEditor;
+      else delete process.env.EDITOR;
+      if (prevVisual !== undefined) process.env.VISUAL = prevVisual;
+      else delete process.env.VISUAL;
+    }
+  });
+});
