@@ -393,7 +393,7 @@ export function canUsePlatformOpener(
  *   1. --editor / $EDITOR / $VISUAL
  *   2. macOS: Noto.app if installed (`open -a`)
  *   3. platform default (`open` / `xdg-open` / `start`)
- * (same spirit as GUI CTA「在本机打开正文」).
+ * (same behavior as the GUI Detail “Open body / 打开正文” CTA).
  * Headless (no DISPLAY/WAYLAND and no editor): returns opened=false, via=none.
  */
 export async function openTaskBody(

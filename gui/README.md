@@ -54,7 +54,7 @@ Both surfaces call `listTasks` / `pushTask` / `reorderTask` / `readHistory` (plu
 - Live refresh when ledger files change
 - status & lane updates → task file + history
 - Detail body shows soft task links `@{T-xxxx}` (click → select in Stack)
-- CTA「Open in editor · 在编辑器中打开」→ same as CLI `open-body` (`$EDITOR` / Noto.app / `xdg-open` / `open`). Headless / no display: `opened=false`, toast shows path + 未打开
+- CTA「Open body · 打开正文」→ same as CLI `open-body` (`$EDITOR` / Noto.app / `xdg-open` / `open`). Headless / no display: `opened=false`, toast shows path + 未打开
 
 ## Stubbed / not this package
 
