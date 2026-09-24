@@ -2,6 +2,7 @@ import './styles.css';
 import {
   completeProject as apiCompleteProject,
   fetchHistory,
+  fetchTask,
   fetchTasks,
   getLedger,
   moveTask as apiMove,
@@ -23,12 +24,15 @@ import {
   type LaneId,
   type ProjectFilter,
 } from './types';
+import { renderTaskBodyHtml } from '../../src/core/task-links.ts';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 
 interface UiState {
   tasks: HoltTaskMeta[];
   historyByTask: Record<string, HoltEvent[]>;
+  /** Markdown body by task id (soft links rendered in Detail). */
+  bodyByTask: Record<string, string>;
   selectedId: string | null;
   lane: LaneFilter;
   project: ProjectFilter;
@@ -46,6 +50,7 @@ interface UiState {
 const state: UiState = {
   tasks: [],
   historyByTask: {},
+  bodyByTask: {},
   selectedId: null,
   lane: 'all',
   project: 'all',
@@ -130,6 +135,13 @@ function selectedTask(): HoltTaskMeta | null {
   return state.tasks.find((t) => t.id === state.selectedId) ?? null;
 }
 
+
+async function loadSelectedDetail(id: string): Promise<void> {
+  const [{ events }, file] = await Promise.all([fetchHistory(id), fetchTask(id)]);
+  state.historyByTask[id] = [...events].reverse();
+  state.bodyByTask[id] = file.body ?? '';
+}
+
 function formatEventLabel(e: HoltEvent): string {
   if (e.event === 'created') return 'create';
   if (e.event === 'project_completed' && e.data) {
@@ -181,8 +193,7 @@ async function refresh(opts?: { keepSelection?: boolean }): Promise<void> {
       state.project = 'all';
     }
     if (state.selectedId) {
-      const { events } = await fetchHistory(state.selectedId);
-      state.historyByTask[state.selectedId] = [...events].reverse();
+      await loadSelectedDetail(state.selectedId);
     }
   } catch (err) {
     state.error = friendlyError(err);
@@ -256,6 +267,10 @@ function renderDetail(task: HoltTaskMeta | null): string {
           )
           .join('')}</ul>`;
 
+  const knownIds = new Set(state.tasks.map((t) => t.id));
+  const rawBody = state.bodyByTask[task.id] ?? '';
+  const bodyHtml = renderTaskBodyHtml(rawBody, knownIds, escapeHtml);
+
   return `
     <div class="detail-label">Detail · ${escapeHtml(task.id)}</div>
     ${state.detailError ? `<div class="detail-error">${escapeHtml(state.detailError)}</div>` : ''}
@@ -309,12 +324,16 @@ function renderDetail(task: HoltTaskMeta | null): string {
         <div class="value">${task.stack_order}</div>
       </div>
     </div>
+    <div class="detail-field detail-field-block detail-body-block">
+      <label>正文 <span class="muted-label">任务链接 @{T-xxxx}</span></label>
+      <div class="detail-body">${bodyHtml || '<span class="muted">（空）</span>'}</div>
+    </div>
     ${
       task.project
         ? `<button type="button" class="noto-btn" data-complete-project="${escapeHtml(task.project)}">完成整个 project</button>`
         : ''
     }
-    <button type="button" class="noto-btn" data-noto>在本机打开正文 / Noto</button>
+    <button type="button" class="noto-btn" data-open-body title="holt open-body">Open in editor · 在编辑器中打开</button>
     <div class="history-label">Recent history</div>
     <ul class="history-list">${history || '<li><span class="t">—</span><span>暂无</span></li>'}</ul>
   `;
@@ -482,13 +501,16 @@ async function selectAndLoad(id: string | null): Promise<void> {
   if (id) {
     state.detailCollapsed = false;
     try {
-      const { events } = await fetchHistory(id);
-      state.historyByTask[id] = [...events].reverse();
+      await loadSelectedDetail(id);
     } catch (err) {
       state.error = friendlyError(err);
     }
   }
   render();
+  if (id) {
+    const card = app.querySelector<HTMLElement>(`.stack-card[data-id="${CSS.escape(id)}"]`);
+    card?.scrollIntoView({ block: 'nearest' });
+  }
 }
 
 app.addEventListener('click', (e) => {
@@ -669,8 +691,8 @@ app.addEventListener('click', (e) => {
     return;
   }
 
-  const noto = t.closest<HTMLElement>('[data-noto]');
-  if (noto) {
+  const openBody = t.closest<HTMLElement>('[data-open-body]');
+  if (openBody) {
     const task = selectedTask();
     if (!task) {
       showToast('未选中任务');

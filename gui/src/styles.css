@@ -550,6 +550,47 @@ body {
   background: #ddd9cf;
 }
 
+.detail-body-block .muted-label {
+  font-weight: 400;
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+
+.detail-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--btn-quiet);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  min-height: 2.5em;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.detail-body .muted {
+  color: var(--ink-faint);
+}
+
+button.task-link {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+span.task-link.is-unknown {
+  color: var(--ink-faint);
+  text-decoration: none;
+}
+
 .history-label {
   font-size: 12px;
   color: var(--ink-faint);

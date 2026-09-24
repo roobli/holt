@@ -54,6 +54,14 @@ Invalid estimate strings fail validation (no silent swallow).
 - Derived: `blocks(A)` = tasks whose `blocked_by` contains A (optional; not stored).
 - Marking `status` → `done` is **refused** if any blocker is still `open`/`doing`, with a human message (e.g. `无法标完成：仍被 T-0001、T-0003 阻塞`). No force-done flag in v1. `dropped` does not use this rule.
 
+
+### Soft task links (body)
+
+- In the Markdown body, `@{T-xxxx}` is a **task link / 任务链接** (soft reference).
+- Parsed from body only — no required frontmatter field. Not a hard dependency.
+- Hard deps stay on `blocked_by` / `--blocked-by` (done-guard semantics unchanged).
+- GUI Detail renders known ids as clickable (select/focus in Stack); unknown ids stay muted plain text.
+
 ### Project
 
 - Field only (`project: <slug>`); no `projects/` directory in v1.

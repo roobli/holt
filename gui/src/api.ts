@@ -49,6 +49,12 @@ export function fetchTasks() {
   return req<{ tasks: HoltTaskMeta[] }>('/api/tasks');
 }
 
+export function fetchTask(id: string) {
+  return req<{ task: HoltTaskMeta; body: string; path: string }>(
+    `/api/tasks/${encodeURIComponent(id)}`,
+  );
+}
+
 export function pushTask(input: {
   title: string;
   lane: string;
