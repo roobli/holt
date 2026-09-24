@@ -333,7 +333,7 @@ function renderDetail(task: HoltTaskMeta | null): string {
         ? `<button type="button" class="noto-btn" data-complete-project="${escapeHtml(task.project)}">完成整个 project</button>`
         : ''
     }
-    <button type="button" class="noto-btn" data-open-body title="holt open-body">Open in editor · 在编辑器中打开</button>
+    <button type="button" class="noto-btn" data-open-body title="holt open-body">Open body · 打开正文</button>
     <div class="history-label">Recent history</div>
     <ul class="history-list">${history || '<li><span class="t">—</span><span>暂无</span></li>'}</ul>
   `;
