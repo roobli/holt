@@ -281,11 +281,13 @@ test('openTaskBody prefers noto via override without EDITOR', async () => {
   delete process.env.VISUAL;
   try {
     // Exercise the darwin branch on any host: the platform is overridden and
-    // the launcher is a recorder, so no real `open` is ever spawned.
+    // the launcher is a recorder, so no real `open` is ever spawned. The error
+    // listener is what keeps a missing `open` from crashing the process.
     const launches: Array<{
       command: string;
-      args: string[];
+      args: readonly string[];
       options: SpawnOptions;
+      listeners: string[];
       unrefs: number;
     }> = [];
     const result = await openTaskBody(root, a.id, {
@@ -293,9 +295,12 @@ test('openTaskBody prefers noto via override without EDITOR', async () => {
       notoApp: noto,
       home,
       spawn: (command, args, options) => {
-        const launch = { command, args, options, unrefs: 0 };
+        const launch = { command, args, options, listeners: [] as string[], unrefs: 0 };
         launches.push(launch);
         return {
+          on(event) {
+            launch.listeners.push(event);
+          },
           unref() {
             launch.unrefs += 1;
           },
@@ -310,6 +315,7 @@ test('openTaskBody prefers noto via override without EDITOR', async () => {
         command: 'open',
         args: ['-a', noto, result.path],
         options: { detached: true, stdio: 'ignore' },
+        listeners: ['error'],
         unrefs: 1,
       },
     ]);

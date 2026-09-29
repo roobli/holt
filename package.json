@@ -4,11 +4,13 @@
   "private": true,
   "type": "module",
   "description": "File-backed personal task stack companion",
+  "packageManager": "pnpm@11.18.0",
   "scripts": {
     "test": "node --experimental-strip-types --test src/core/*.test.ts src/commands.test.ts src/cli.test.ts gui/config.test.ts gui/api-ledger.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p gui/tsconfig.json --noEmit",
     "gui:dev": "node --experimental-strip-types gui/dev.ts",
-    "holt": "node --experimental-strip-types src/cli.ts"
+    "holt": "node --experimental-strip-types src/cli.ts",
+    "verify": "pnpm typecheck && pnpm test"
   },
   "engines": {
     "node": ">=22"
