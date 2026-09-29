@@ -4,7 +4,7 @@
  */
 import { accessSync, existsSync } from 'node:fs';
 import { access } from 'node:fs/promises';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, type SpawnOptions } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join as pathJoin } from 'node:path';
 import {
@@ -352,7 +352,16 @@ export interface OpenTaskBodyOptions {
   platform?: NodeJS.Platform;
   /** Override home directory for Noto probe (tests). */
   home?: string;
+  /** Override the detached launcher for platform openers (tests). */
+  spawn?: SpawnDetached;
 }
+
+/** Launches a platform opener; the caller only needs to unref it. */
+export type SpawnDetached = (
+  command: string,
+  args: string[],
+  options: SpawnOptions,
+) => { unref(): void };
 
 /**
  * Prefer Noto on macOS when installed (Applications or ~/Applications).
@@ -424,6 +433,7 @@ export async function openTaskBody(
     return { path, opened: false, via: 'none' };
   }
 
+  const launch: SpawnDetached = opts.spawn ?? spawn;
   try {
     if (platform === 'darwin') {
       const noto =
@@ -434,17 +444,17 @@ export async function openTaskBody(
             : detectNotoApp(platform, opts.home ?? homedir());
       if (noto && existsSync(noto)) {
         // Detached open -a: stable on Mac (does not wait; prefers Noto over TextEdit).
-        spawn('open', ['-a', noto, path], { detached: true, stdio: 'ignore' }).unref();
+        launch('open', ['-a', noto, path], { detached: true, stdio: 'ignore' }).unref();
         return { path, opened: true, via: 'noto' };
       }
-      spawn('open', [path], { detached: true, stdio: 'ignore' }).unref();
+      launch('open', [path], { detached: true, stdio: 'ignore' }).unref();
       return { path, opened: true, via: 'platform' };
     }
     if (platform === 'win32') {
-      spawn('cmd', ['/c', 'start', '', path], { detached: true, stdio: 'ignore' }).unref();
+      launch('cmd', ['/c', 'start', '', path], { detached: true, stdio: 'ignore' }).unref();
       return { path, opened: true, via: 'platform' };
     }
-    spawn('xdg-open', [path], { detached: true, stdio: 'ignore' }).unref();
+    launch('xdg-open', [path], { detached: true, stdio: 'ignore' }).unref();
     return { path, opened: true, via: 'platform' };
   } catch {
     return { path, opened: false, via: 'none' };

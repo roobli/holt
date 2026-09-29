@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import type { SpawnOptions } from 'node:child_process';
 import { mkdtemp, readFile, writeFile, mkdir} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -279,17 +280,39 @@ test('openTaskBody prefers noto via override without EDITOR', async () => {
   delete process.env.EDITOR;
   delete process.env.VISUAL;
   try {
-    // On non-darwin CI we still exercise the branch via platform override;
-    // spawn('open') may fail on linux — catch via opened/via when open missing.
+    // Exercise the darwin branch on any host: the platform is overridden and
+    // the launcher is a recorder, so no real `open` is ever spawned.
+    const launches: Array<{
+      command: string;
+      args: string[];
+      options: SpawnOptions;
+      unrefs: number;
+    }> = [];
     const result = await openTaskBody(root, a.id, {
       platform: 'darwin',
       notoApp: noto,
       home,
+      spawn: (command, args, options) => {
+        const launch = { command, args, options, unrefs: 0 };
+        launches.push(launch);
+        return {
+          unref() {
+            launch.unrefs += 1;
+          },
+        };
+      },
     });
     assert.ok(result.path.endsWith(`${a.id}.md`));
-    // Spawn is fire-and-forget; we still record the intended via=noto branch.
     assert.equal(result.via, 'noto');
     assert.equal(result.opened, true);
+    assert.deepEqual(launches, [
+      {
+        command: 'open',
+        args: ['-a', noto, result.path],
+        options: { detached: true, stdio: 'ignore' },
+        unrefs: 1,
+      },
+    ]);
   } finally {
     if (prevEditor !== undefined) process.env.EDITOR = prevEditor;
     else delete process.env.EDITOR;
