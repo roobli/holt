@@ -279,8 +279,9 @@ test('openTaskBody prefers noto via override without EDITOR', async () => {
   delete process.env.EDITOR;
   delete process.env.VISUAL;
   try {
-    // On non-darwin CI we still exercise the branch via platform override;
-    // spawn('open') may fail on linux — catch via opened/via when open missing.
+    // On non-darwin hosts this exercises the darwin branch through the platform
+    // override. There is no `open` binary there, and the launch must survive
+    // that rather than crash the process.
     const result = await openTaskBody(root, a.id, {
       platform: 'darwin',
       notoApp: noto,
