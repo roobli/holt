@@ -343,7 +343,7 @@ body {
 .stack-card-cols {
   flex: 1;
   min-width: 0;
-  /* tall rows: meta top-aligned with title (cdcd) */
+  /* tall rows: meta top-aligned with title */
   align-items: start;
   padding: 12px 0 12px 14px;
 }

@@ -19,7 +19,7 @@ YAML frontmatter + Markdown body (open the body in Noto or any editor).
 | `id` | yes | `T-` + zero-padded counter; filename matches |
 | `title` | yes | short |
 | `status` | yes | `open` \| `doing` \| `done` \| `dropped` |
-| `lane` | yes | e.g. `personal` \| `work` \| `openjobs` |
+| `lane` | yes | any label, e.g. `personal` \| `work` \| a project name |
 | `stack_order` | yes | smaller = nearer stack top; gaps allowed |
 | `estimate` | no | duration with unit: `45m` / `2h` / `1d` / `90` (bare = minutes) |
 | `estimate_min` | no | non-negative minutes; dual-written from `estimate` during transition; legacy files may have only this |
