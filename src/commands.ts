@@ -4,7 +4,7 @@
  */
 import { accessSync, existsSync } from 'node:fs';
 import { access } from 'node:fs/promises';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, type SpawnOptions } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join as pathJoin } from 'node:path';
 import {
@@ -396,6 +396,20 @@ export function canUsePlatformOpener(
  * (same behavior as the GUI Detail “Open body / 打开正文” CTA).
  * Headless (no DISPLAY/WAYLAND and no editor): returns opened=false, via=none.
  */
+/**
+ * Start a detached opener and let it go.
+ *
+ * A missing binary (no `xdg-open`, no `open`) is reported through the child's
+ * `error` event after spawn returns. With no listener, Node turns that into
+ * an uncaught exception and takes the CLI or the GUI server down with it, so
+ * every detached launch goes through here.
+ */
+function launchDetached(command: string, args: readonly string[], options: SpawnOptions = {}): void {
+  const child = spawn(command, args, { detached: true, stdio: 'ignore', ...options });
+  child.on('error', () => {});
+  child.unref();
+}
+
 export async function openTaskBody(
   root: string,
   id: string,
@@ -414,7 +428,7 @@ export async function openTaskBody(
         throw new Error(`editor exited ${result.status}: ${editor}`);
       }
     } else {
-      spawn(cmdline, { detached: true, stdio: 'ignore', shell: true }).unref();
+      launchDetached(cmdline, [], { shell: true });
     }
     return { path, opened: true, via: 'editor' };
   }
@@ -434,17 +448,17 @@ export async function openTaskBody(
             : detectNotoApp(platform, opts.home ?? homedir());
       if (noto && existsSync(noto)) {
         // Detached open -a: stable on Mac (does not wait; prefers Noto over TextEdit).
-        spawn('open', ['-a', noto, path], { detached: true, stdio: 'ignore' }).unref();
+        launchDetached('open', ['-a', noto, path]);
         return { path, opened: true, via: 'noto' };
       }
-      spawn('open', [path], { detached: true, stdio: 'ignore' }).unref();
+      launchDetached('open', [path]);
       return { path, opened: true, via: 'platform' };
     }
     if (platform === 'win32') {
-      spawn('cmd', ['/c', 'start', '', path], { detached: true, stdio: 'ignore' }).unref();
+      launchDetached('cmd', ['/c', 'start', '', path]);
       return { path, opened: true, via: 'platform' };
     }
-    spawn('xdg-open', [path], { detached: true, stdio: 'ignore' }).unref();
+    launchDetached('xdg-open', [path]);
     return { path, opened: true, via: 'platform' };
   } catch {
     return { path, opened: false, via: 'none' };
