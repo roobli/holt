@@ -23,6 +23,7 @@ import {
   type LaneFilter,
   type LaneId,
   type ProjectFilter,
+  DEFAULT_LANES,
 } from './types';
 import { renderTaskBodyHtml } from '../../src/core/task-links.ts';
 
@@ -108,6 +109,15 @@ function estimateToHeight(estimateMin?: number): number {
   const t = Math.min(1, Math.max(0, (estimateMin - 10) / 80));
   const eased = 1 - (1 - t) * (1 - t);
   return Math.round(MIN + (MAX - MIN) * eased);
+}
+
+/** The default lanes, then every other lane the ledger's tasks use, in first-seen order. */
+function knownLanes(): LaneId[] {
+  const set = new Set<LaneId>(DEFAULT_LANES);
+  for (const t of state.tasks) {
+    if (t.lane) set.add(t.lane);
+  }
+  return [...set];
 }
 
 function projectSlugs(): string[] {
@@ -253,8 +263,7 @@ function renderDetail(task: HoltTaskMeta | null): string {
     )
     .join('');
 
-  const lanes: LaneId[] = ['personal', 'work', 'openjobs'];
-  const laneOptions = Array.from(new Set([...lanes, task.lane]));
+  const laneOptions = Array.from(new Set([...knownLanes(), task.lane]));
   const estVal = displayEstimate(task) ?? '';
   const blocked = task.blocked_by ?? [];
   const blockedList =
@@ -347,9 +356,9 @@ function renderPushDialog(): string {
       <label>title<input type="text" name="title" placeholder="任务标题" autofocus /></label>
       <label>lane
         <select name="lane">
-          <option value="personal">personal</option>
-          <option value="work">work</option>
-          <option value="openjobs">openjobs</option>
+          ${knownLanes()
+            .map((lane) => `<option value="${escapeHtml(lane)}">${escapeHtml(lane)}</option>`)
+            .join('')}
         </select>
       </label>
       <label>estimate (optional)<input type="text" name="estimate" placeholder="45m / 2h / 1d" /></label>
@@ -367,9 +376,7 @@ function render(): void {
   const selected = selectedTask();
   const lanes: { id: LaneFilter; label: string }[] = [
     { id: 'all', label: 'All' },
-    { id: 'personal', label: 'personal' },
-    { id: 'work', label: 'work' },
-    { id: 'openjobs', label: 'openjobs' },
+    ...knownLanes().map((lane) => ({ id: lane, label: lane })),
   ];
   const projects = projectSlugs();
 

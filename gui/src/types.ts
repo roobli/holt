@@ -1,5 +1,7 @@
 export type HoltStatus = 'open' | 'doing' | 'done' | 'dropped';
-export type LaneId = 'personal' | 'work' | 'openjobs';
+/** A lane is any label a ledger uses; these two are offered before any task exists. */
+export type LaneId = string;
+export const DEFAULT_LANES: readonly LaneId[] = ['personal', 'work'];
 export type LaneFilter = 'all' | LaneId;
 export type ProjectFilter = 'all' | string;
 
