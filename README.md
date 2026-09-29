@@ -1,5 +1,16 @@
 # holt
 
+A local task ledger that lives beside your notes: one Markdown file per task
+and an append-only history log, driven from a command line and a small local
+GUI that share the same files.
+
+holt is a personal companion to [Noto](https://github.com/roobli/Noto),
+published as is. It is not part of Noto, which only opens a task's body when
+asked, and it is maintained on a best-effort basis. The usage guide below is
+in Chinese.
+
+---
+
 **holt：vault 旁的本地任务账本，不是网站。**
 
 Source of truth = `tasks/*.md` + `history.ndjson` on disk. CLI and Stack GUI share the same commands.
