@@ -352,7 +352,19 @@ export interface OpenTaskBodyOptions {
   platform?: NodeJS.Platform;
   /** Override home directory for Noto probe (tests). */
   home?: string;
+  /** Override how detached openers are spawned (tests). */
+  spawn?: SpawnDetached;
 }
+
+/** Spawns a detached opener; launchDetached then listens for errors and unrefs it. */
+export type SpawnDetached = (
+  command: string,
+  args: readonly string[],
+  options: SpawnOptions,
+) => {
+  on(event: 'error', listener: (err: Error) => void): unknown;
+  unref(): void;
+};
 
 /**
  * Prefer Noto on macOS when installed (Applications or ~/Applications).
@@ -389,14 +401,6 @@ export function canUsePlatformOpener(
 }
 
 /**
- * Resolve task md path and open with:
- *   1. --editor / $EDITOR / $VISUAL
- *   2. macOS: Noto.app if installed (`open -a`)
- *   3. platform default (`open` / `xdg-open` / `start`)
- * (same behavior as the GUI Detail “Open body / 打开正文” CTA).
- * Headless (no DISPLAY/WAYLAND and no editor): returns opened=false, via=none.
- */
-/**
  * Start a detached opener and let it go.
  *
  * A missing binary (no `xdg-open`, no `open`) is reported through the child's
@@ -404,18 +408,32 @@ export function canUsePlatformOpener(
  * an uncaught exception and takes the CLI or the GUI server down with it, so
  * every detached launch goes through here.
  */
-function launchDetached(command: string, args: readonly string[], options: SpawnOptions = {}): void {
-  const child = spawn(command, args, { detached: true, stdio: 'ignore', ...options });
+function launchDetached(
+  spawnFn: SpawnDetached,
+  command: string,
+  args: readonly string[],
+  options: SpawnOptions = {},
+): void {
+  const child = spawnFn(command, args, { detached: true, stdio: 'ignore', ...options });
   child.on('error', () => {});
   child.unref();
 }
 
+/**
+ * Resolve task md path and open with:
+ *   1. --editor / $EDITOR / $VISUAL
+ *   2. macOS: Noto.app if installed (`open -a`)
+ *   3. platform default (`open` / `xdg-open` / `start`)
+ * (same behavior as the GUI Detail “Open body / 打开正文” CTA).
+ * Headless (no DISPLAY/WAYLAND and no editor): returns opened=false, via=none.
+ */
 export async function openTaskBody(
   root: string,
   id: string,
   opts: OpenTaskBodyOptions = {},
 ): Promise<{ path: string; opened: boolean; via: string }> {
   const { path } = await readTaskFile(root, id);
+  const spawnFn: SpawnDetached = opts.spawn ?? spawn;
   const editor = opts.editor?.trim() || process.env.EDITOR || process.env.VISUAL;
   if (editor) {
     const wait = opts.wait !== false;
@@ -428,7 +446,7 @@ export async function openTaskBody(
         throw new Error(`editor exited ${result.status}: ${editor}`);
       }
     } else {
-      launchDetached(cmdline, [], { shell: true });
+      launchDetached(spawnFn, cmdline, [], { shell: true });
     }
     return { path, opened: true, via: 'editor' };
   }
@@ -448,17 +466,17 @@ export async function openTaskBody(
             : detectNotoApp(platform, opts.home ?? homedir());
       if (noto && existsSync(noto)) {
         // Detached open -a: stable on Mac (does not wait; prefers Noto over TextEdit).
-        launchDetached('open', ['-a', noto, path]);
+        launchDetached(spawnFn, 'open', ['-a', noto, path]);
         return { path, opened: true, via: 'noto' };
       }
-      launchDetached('open', [path]);
+      launchDetached(spawnFn, 'open', [path]);
       return { path, opened: true, via: 'platform' };
     }
     if (platform === 'win32') {
-      launchDetached('cmd', ['/c', 'start', '', path]);
+      launchDetached(spawnFn, 'cmd', ['/c', 'start', '', path]);
       return { path, opened: true, via: 'platform' };
     }
-    launchDetached('xdg-open', [path]);
+    launchDetached(spawnFn, 'xdg-open', [path]);
     return { path, opened: true, via: 'platform' };
   } catch {
     return { path, opened: false, via: 'none' };
